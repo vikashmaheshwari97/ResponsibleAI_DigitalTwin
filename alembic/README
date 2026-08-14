@@ -1,0 +1,2 @@
+Alembic migrations for the Responsible AI Digital Twin project.
+Use `python scripts/migrate_database.py` for safe upgrades.

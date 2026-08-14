@@ -1,0 +1,37 @@
+services:
+  secure-messenger:
+    build:
+      context: ./sandbox/secure_messenger
+    container_name: rai-secure-messenger
+    ports:
+      - "127.0.0.1:8001:8000"
+    environment:
+      APP_VERSION: "1.0"
+      AUTHORIZATION_MODE: "vulnerable"
+      SANDBOX_ADMIN_TOKEN: "${SANDBOX_ADMIN_TOKEN}"
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17
+    container_name: rai-postgres
+    ports:
+      - "127.0.0.1:5433:5432"
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB}"
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+    volumes:
+      - rai_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  rai_postgres_data:
