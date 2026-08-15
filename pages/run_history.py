@@ -20,59 +20,74 @@ from services.repository_service import (
     list_twin_snapshots,
 )
 from services.run_service import abort_persisted_run, interrupt_persisted_run
+from services.ui_service import page_header, section_header, status_chip_html, tone_for_status
 
 
 TERMINAL = {"secured", "validated", "failed", "rejected", "interrupted", "aborted"}
 
-st.title("🗃️ Persistent Run History")
-st.caption("PostgreSQL-backed lifecycle, policy, Twin snapshots and audit-integrity evidence.")
+page_header(
+    "Persistent Run History",
+    "Explore PostgreSQL-backed lifecycle state, HTTP evidence, findings, remediation, policy decisions, "
+    "human oversight, Twin snapshots, agent events, and hash-chain integrity.",
+    icon="🗃️",
+    eyebrow="Governance & Evidence · Historical Runs",
+)
+
 health = database_health()
 if not health["connected"]:
     st.error(f"PostgreSQL unavailable: {health['error']}")
     st.stop()
-st.success(f"PostgreSQL connected · {health['database']} · {health['url']}")
+
+st.markdown(
+    status_chip_html(f"PostgreSQL · {health['database']} · {health['url']}", "success"),
+    unsafe_allow_html=True,
+)
 
 runs = list_runs(limit=500)
 if not runs:
     st.info("No persisted runs yet.")
     st.stop()
 
-st.subheader("Validation Runs")
-st.dataframe(
-    pd.DataFrame(
-        [
-            {
-                "Run ID": run.run_id,
-                "Scenario ID": run.scenario_id,
-                "Scenario": run.scenario_name,
-                "Status": run.status,
-                "Result": run.result or "—",
-                "Model": run.model_name or "fallback",
-                "Twin": (
-                    f"{run.initial_twin_version} → {run.final_twin_version}"
-                    if run.final_twin_version
-                    else run.initial_twin_version
-                ),
-                "Duration (s)": (
-                    round(duration_seconds(run.started_at, run.completed_at), 1)
-                    if duration_seconds(run.started_at, run.completed_at) is not None
-                    else None
-                ),
-                "Started": run.started_at,
-                "Completed": run.completed_at,
-            }
-            for run in runs
-        ]
+run_rows = [
+    {
+        "Run ID": run.run_id,
+        "Scenario ID": run.scenario_id,
+        "Scenario": run.scenario_name,
+        "Status": run.status,
+        "Result": run.result or "—",
+        "Model": run.model_name or "fallback",
+        "Twin": (
+            f"{run.initial_twin_version} → {run.final_twin_version}"
+            if run.final_twin_version
+            else run.initial_twin_version
+        ),
+        "Duration (s)": (
+            round(duration_seconds(run.started_at, run.completed_at), 1)
+            if duration_seconds(run.started_at, run.completed_at) is not None
+            else None
+        ),
+        "Started": run.started_at,
+        "Completed": run.completed_at,
+    }
+    for run in runs
+]
+
+section_header("Validation Runs", "Newest persisted runs are available for forensic inspection.")
+with st.expander("Run inventory", expanded=True):
+    st.dataframe(pd.DataFrame(run_rows), use_container_width=True, hide_index=True)
+
+selected_run_id = st.selectbox(
+    "Inspect run",
+    [run.run_id for run in runs],
+    format_func=lambda run_id: next(
+        f"{run.run_id} · {run.scenario_id} · {run.status}"
+        for run in runs
+        if run.run_id == run_id
     ),
-    use_container_width=True,
-    hide_index=True,
 )
-
-selected_run_id = st.selectbox("Inspect run", [run.run_id for run in runs])
 selected = next(run for run in runs if run.run_id == selected_run_id)
-st.divider()
-st.subheader(selected.run_id)
 
+section_header(selected.run_id, f"{selected.scenario_id} · {selected.scenario_name}")
 c1, c2, c3, c4, c5 = st.columns(5)
 c1.metric("Scenario", selected.scenario_id)
 c2.metric("Status", selected.status)
@@ -86,15 +101,21 @@ c5.metric(
         else selected.initial_twin_version
     ),
 )
-st.write(f"**Scenario:** {selected.scenario_name}")
+st.markdown(
+    status_chip_html(selected.status, tone_for_status(selected.status)),
+    unsafe_allow_html=True,
+)
 st.write(f"**Objective:** {selected.objective}")
 if selected.failure_reason:
-    st.error(f"**Failure reason:** {selected.failure_reason}")
+    st.error(f"Failure reason: {selected.failure_reason}")
 if selected.abort_reason:
-    st.warning(f"**Abort reason:** {selected.abort_reason}")
+    st.warning(f"Abort reason: {selected.abort_reason}")
 
 if selected.status not in TERMINAL:
-    st.warning("This run is not terminal. If the application stopped mid-run, it can be marked interrupted or aborted by an execution-authorized role.")
+    st.warning(
+        "This run is not terminal. If the application stopped mid-run, an execution-authorized role "
+        "may mark it interrupted or aborted."
+    )
     if can_execute_scenarios():
         a, b = st.columns(2)
         with a:
@@ -105,9 +126,6 @@ if selected.status not in TERMINAL:
             if st.button("Abort Run", use_container_width=True):
                 abort_persisted_run(selected_run_id, "Explicitly aborted from Run History.")
                 st.rerun()
-    else:
-        st.caption("Read-only role: lifecycle mutation controls are hidden.")
-
 
 tests = list_security_tests(selected_run_id)
 findings = list_findings(selected_run_id)
@@ -124,13 +142,14 @@ tabs = st.tabs(
         "HTTP Evidence",
         "Finding",
         "Remediation",
-        "Policy Rules",
+        "Policy",
         "Human",
         "Twin Snapshots",
         "Agent Timeline",
         "Audit Integrity",
     ]
 )
+
 with tabs[0]:
     if tests:
         st.dataframe(
@@ -157,6 +176,7 @@ with tabs[0]:
                 st.json(test.response_json)
     else:
         st.info("No HTTP evidence stored.")
+
 with tabs[1]:
     if findings:
         item = findings[-1]
@@ -173,6 +193,7 @@ with tabs[1]:
         )
     else:
         st.info("No finding stored.")
+
 with tabs[2]:
     if remediations:
         item = remediations[-1]
@@ -190,6 +211,7 @@ with tabs[2]:
         )
     else:
         st.info("No remediation stored.")
+
 with tabs[3]:
     if policies:
         st.dataframe(
@@ -210,6 +232,7 @@ with tabs[3]:
             hide_index=True,
         )
     if rules:
+        st.markdown("#### Rule-level evidence")
         st.dataframe(
             pd.DataFrame(
                 [
@@ -228,6 +251,7 @@ with tabs[3]:
         )
     if not policies and not rules:
         st.info("No policy evidence stored.")
+
 with tabs[4]:
     if human:
         st.dataframe(
@@ -247,6 +271,7 @@ with tabs[4]:
         )
     else:
         st.info("No human decision stored.")
+
 with tabs[5]:
     if snapshots:
         st.dataframe(
@@ -271,6 +296,7 @@ with tabs[5]:
         st.json(snap.state_json)
     else:
         st.info("No Twin snapshots stored.")
+
 with tabs[6]:
     if agents:
         st.dataframe(
@@ -291,18 +317,21 @@ with tabs[6]:
         )
     else:
         st.info("No agent events stored.")
+
 with tabs[7]:
     integrity = verify_hash_chain(selected_run_id)
     if integrity["valid"]:
         st.success(f"Hash chain VALID · {integrity['hashed_events']} hashed event(s)")
     else:
         st.warning(f"Hash chain requires attention · {integrity.get('reason', 'not hashed')}")
+
     if can_manage_governance():
         if st.button("Rebuild / Backfill Hash Chain", use_container_width=True):
             apply_hash_chain_to_run(selected_run_id)
             st.rerun()
     elif not integrity["valid"]:
         st.caption("Admin role required to rebuild the persisted hash chain.")
+
     if audit:
         st.dataframe(
             pd.DataFrame(

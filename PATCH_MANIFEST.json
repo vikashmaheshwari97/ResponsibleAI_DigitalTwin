@@ -1,0 +1,33 @@
+{
+  "package": "ResponsibleAI_DigitalTwin_Phases_1_10_Professional_UI_Upgrade",
+  "version": "0.6.0-phases1-10-ui",
+  "base_github_commit": "028f99becb7dcc093394caf8f68659f1e16a80c3",
+  "database_schema": "005_twin_snapshots",
+  "database_migration_added": false,
+  "ut_server_deployment_included": false,
+  "copy_mode": "overlay into existing ResponsibleAI_DigitalTwin project",
+  "files": [
+    "UPGRADE_NOTES_PHASES_1_10_UI.md",
+    "VERSION",
+    "app.py",
+    "docs/UI_DESIGN_SYSTEM.md",
+    "pages/agents.py",
+    "pages/analytics.py",
+    "pages/audit.py",
+    "pages/compliance.py",
+    "pages/digital_twin.py",
+    "pages/overview.py",
+    "pages/readiness.py",
+    "pages/reports.py",
+    "pages/run_history.py",
+    "pages/scenario_lab.py",
+    "scripts/validate_restore_backup.py",
+    "services/phase_completion_service.py",
+    "services/ui_service.py",
+    "services/workflow_contract_service.py",
+    "tests/test_llm_contract_completion.py",
+    "tests/test_policy_engine_completion.py",
+    "tests/test_twin_contract_completion.py",
+    "tests/test_workflow_contract_completion.py"
+  ]
+}

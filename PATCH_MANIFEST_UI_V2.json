@@ -1,0 +1,22 @@
+{
+  "package": "ResponsibleAI_DigitalTwin_Professional_UI_v2_Hotfix",
+  "version": "0.6.1-professional-ui-v2",
+  "purpose": [
+    "Fix primary button text contrast",
+    "Fix raw HTML phase-grid rendering",
+    "Reduce repeated UI information",
+    "Refine professional research-console layout"
+  ],
+  "database_schema": "005_twin_snapshots",
+  "database_migration_added": false,
+  "ut_deployment_included": false,
+  "overlay_files": [
+    "UPGRADE_NOTES_UI_V2.md",
+    "VERSION",
+    "app.py",
+    "pages/readiness.py",
+    "pages/scenario_lab.py",
+    "services/ui_service.py",
+    "tests/test_ui_v2_contract.py"
+  ]
+}

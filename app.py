@@ -15,6 +15,8 @@ from services.auth_service import (
 )
 from services.database_service import database_health
 from services.policy_registry_service import seed_policy_rules
+from services.sandbox_service import get_sandbox_health
+from services.ui_service import inject_global_styles, status_chip_html, tone_for_status
 
 
 st.set_page_config(
@@ -24,6 +26,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+inject_global_styles()
 initialize_session_state()
 enforce_session_timeout()
 render_login_gate()
@@ -37,16 +40,6 @@ if db["connected"]:
         seed_policy_rules()
     except Exception:
         pass
-
-st.markdown(
-    """
-    <style>
-      .block-container {padding-top:1.6rem;padding-bottom:3rem;max-width:1500px;}
-      [data-testid='stSidebar']{border-right:1px solid #e5e7eb;}
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
 
 platform_pages = [
     st.Page("pages/overview.py", title="Overview", icon="🏠", default=True),
@@ -81,35 +74,66 @@ pages = {"Platform": platform_pages}
 if validation_pages:
     pages["AI Validation"] = validation_pages
 pages["Governance & Evidence"] = evidence_pages
-
 navigation = st.navigation(pages)
 
+sandbox = get_sandbox_health()
+phase = st.session_state.phase
+phase_label = phase.replace("_", " ").title()
+
 with st.sidebar:
-    st.markdown("### 🛡️ RAI Twin")
-    st.caption("Digital-Twin-Driven Responsible AI Platform")
-    st.divider()
-    st.caption("IDENTITY")
-    st.write(f"**User:** {identity.get('username')}")
-    st.write(f"**Role:** {role}")
-    st.write(f"**Auth:** {'enabled' if auth_enabled() else 'local development'}")
+    st.markdown(
+        """
+        <div class="rai-sidebar-brand">
+          <strong>🛡️ RAI Twin</strong>
+          <span>Responsible AI validation & evidence console</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # Keep the sidebar intentionally compact. Runtime detail belongs on Overview,
+    # preventing the same information from being repeated on every page.
+    st.caption("SESSION")
+    st.markdown(
+        f"""
+        <div class="rai-sidebar-line">
+          <div class="rai-sidebar-label">Identity</div>
+          <div class="rai-sidebar-value">{identity.get("username") or "anonymous"} · {role}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     if auth_enabled() and st.button("Sign out", use_container_width=True):
         logout()
         st.rerun()
 
-    st.divider()
-    st.caption("ENVIRONMENT")
-    st.success("● SANDBOX PoC")
-    st.write(f"**Twin:** {st.session_state.twin['name']}")
-    st.write(f"**Version:** {st.session_state.twin['version']}")
-    st.write(f"**State:** {st.session_state.phase.replace('_', ' ').title()}")
-    st.write(f"**Network:** {st.session_state.twin['external_network']}")
-    st.write(f"**LLM:** {st.session_state.get('ollama_model') or 'auto-select in Scenario Lab'}")
-    current_db = database_health()
-    st.write("**Evidence DB:** PostgreSQL ✓" if current_db["connected"] else "**Evidence DB:** offline")
-    st.divider()
+    st.caption("CURRENT TWIN")
+    st.markdown(
+        f"""
+        <div class="rai-sidebar-line">
+          <div class="rai-sidebar-label">SecureMessenger</div>
+          <div class="rai-sidebar-value">v{st.session_state.twin["version"]} · {phase_label}</div>
+          <div style="margin-top:.35rem">
+            {status_chip_html(
+                "Sandbox online" if sandbox.get("available") else "Sandbox offline",
+                "success" if sandbox.get("available") else "danger",
+            )}
+            {status_chip_html(
+                "DB online" if db.get("connected") else "DB offline",
+                "success" if db.get("connected") else "danger",
+            )}
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     if role in {ROLE_ADMIN, ROLE_OPERATOR}:
         if st.button("↻ Reset Demo", use_container_width=True):
             reset_demo()
             st.rerun()
+
+    st.caption("Local research PoC · Phase 11 deferred")
 
 navigation.run()
