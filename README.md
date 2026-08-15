@@ -1,287 +1,307 @@
 # Responsible AI Digital Twin Platform
 
-A **Digital-Twin-Driven Responsible AI Platform** for controlled AI-agent validation, security testing, human-governed remediation, persistent evidence, policy enforcement, and auditable before/after verification.
+A **Digital-Twin-Driven Responsible AI Platform** for controlled AI-agent validation, safe sandbox testing, policy-governed remediation, human oversight, persistent evidence, professional analytics, and auditable before/after reporting.
 
-> **Status:** Research prototype / proof of concept.  
-> **Safety boundary:** The current security scenarios run only against a local Docker sandbox with synthetic users and synthetic data. The project is not designed to attack or test external systems.
+> **Current scope:** local research prototype / PoC.  
+> **Safety boundary:** all security scenarios are predefined, synthetic, localhost-only, and execute only against the Docker `SecureMessenger` Digital Twin. The UI does not accept arbitrary external targets.  
+> **University of Tartu server deployment:** intentionally deferred to the final project milestone.
 
-![Validation pass](docs/images/validation-pass.png)
+## What is implemented now
 
-## Overview
+This version completes the local-code work for Roadmap items **1–4**:
 
-The platform creates a stateful Digital Twin of a synthetic messaging application (`SecureMessenger`) and coordinates multiple AI/software agents to execute a controlled security-validation lifecycle:
+1. **Multiple controlled safe scenarios**
+2. **Professional Run Analytics**
+3. **Enhanced Database-Backed Reports**
+4. **Deployment Hardening foundations**
 
-1. Define a safe validation scenario.
-2. Evaluate platform policy before execution.
-3. Run a real HTTP test against the local Docker sandbox.
-4. Observe the returned evidence.
-5. Ask a local Ollama LLM for a schema-validated security assessment.
-6. Generate a structured defensive remediation proposal.
-7. Evaluate the remediation through the policy engine.
-8. Require explicit human approval before changing the sandbox.
-9. Apply only the approved local sandbox remediation.
-10. Re-run the exact same real HTTP validation.
-11. Persist findings, policies, approvals, HTTP evidence, Digital Twin snapshots, and audit events in PostgreSQL.
-12. Reconstruct historical runs and reports after Streamlit restarts.
-
-The first implemented scenario demonstrates **Broken Object-Level Authorization (BOLA)**:
-
-```text
-Alice requests Bob's synthetic MSG-204
-              |
-              v
-Initial expected HTTP 403
-Initial observed HTTP 200  -> vulnerability detected
-              |
-              v
-Structured Security Analyst assessment
-              |
-              v
-Structured remediation proposal
-              |
-              v
-PERMIT_WITH_APPROVAL
-              |
-              v
-Explicit human approval
-              |
-              v
-Secure authorization mode applied to local sandbox
-              |
-              v
-Same request re-executed
-              |
-              v
-Expected HTTP 403
-Observed HTTP 403 -> PASS
-```
-
-## Demonstrated Capabilities
-
-- Streamlit multi-page user interface
-- Stateful Digital Twin model
-- Local Docker sandbox
-- Synthetic vulnerable messaging mini-application
-- Real HTTP validation and verification
-- Local Ollama LLM integration
-- Schema-validated Pydantic LLM outputs
-- Deterministic structured fallback if Ollama is unavailable/slow
-- Agent-based workflow:
-  - Scenario Planner
-  - Security Testing Agent
-  - Observer Agent
-  - Security Analyst
-  - Remediation Agent
-  - Verification Agent
-- Explicit human remediation approval
-- Policy outcomes:
-  - `PERMIT`
-  - `PERMIT_WITH_APPROVAL`
-  - `BLOCK`
-- Persistent PostgreSQL evidence store
-- Alembic schema migrations
-- Explicit run lifecycle and interrupted/aborted runs
-- Persistent policy rule registry
-- Rule-level policy evaluation evidence
-- Digital Twin state snapshots
-- SHA-256 audit-event hash chains
-- Persistent Run History
-- Database-backed reports and JSON evidence bundles
-
-## Current Architecture
-
-```text
-Browser
-  |
-  v
-Streamlit UI
-  |
-  v
-Orchestration Service
-  |
-  +------------------+-------------------+------------------+
-  |                  |                   |                  |
-  v                  v                   v                  v
-Agents          Policy Engine      Evidence Engine     Digital Twin
-  |                  |                   |                  |
-  |                  |                   |                  |
-  +------------------+-------------------+------------------+
-                         |
-                         v
-                     PostgreSQL
-                         |
-                         v
-                       Alembic
-
-Local runtime services:
-  - Ollama / llama3
-  - Docker SecureMessenger
-```
-
-## Platform Pages
-
-### Overview
-
-Displays the current Digital Twin, platform health, Ollama availability, PostgreSQL evidence-store status, and security metrics.
-
-### Digital Twin
-
-Shows the current Twin state, version, topology, component states, sandbox isolation controls, and SecureMessenger runtime status.
-
-### Security Scenario Lab
-
-Executes the controlled validation lifecycle and displays:
-
-- AI runtime
-- Docker sandbox runtime
-- selected scenario and objective
-- agent status
-- safety boundary
-- real HTTP evidence
-- structured finding
-- structured remediation
-- policy decision
-- human approval gate
-- verification result
-- updated Digital Twin
-
-### Agent Activity
-
-Shows the actions and status transitions of the platform agents.
-
-### Run History
-
-Loads persistent historical runs from PostgreSQL and exposes:
-
-- HTTP Evidence
-- Finding
-- Remediation
-- Policy Rules
-- Human decision
-- Twin Snapshots
-- Agent Timeline
-- Audit Integrity
-
-![Persistent run history](docs/images/persistent-run-history.png)
-
-### Compliance & Governance
-
-Displays the technical governance controls and persistent policy-rule registry.
-
-Current policy rules include:
-
-| Rule ID | Purpose |
-|---|---|
-| `POL-SBX-001` | Sandbox-only execution |
-| `POL-DATA-001` | Synthetic data only |
-| `POL-NET-001` | External targets prohibited |
-| `POL-DB-001` | Persistent evidence store required |
-| `POL-HUM-001` | Human approval required for remediation |
-| `POL-AUD-001` | Privileged actions must be auditable |
-| `POL-VER-001` | Remediation requires verification |
-
-This page demonstrates technical controls. It **does not claim legal compliance with the EU AI Act, GDPR, or other regulations**.
-
-### Audit Trail
-
-Displays PostgreSQL-backed audit events and verifies the per-run SHA-256 evidence hash chain.
-
-### Reports
-
-Reconstructs historical run evidence directly from PostgreSQL and exports a JSON evidence bundle.
+The remaining major milestone is **University of Tartu server deployment**, which will be done later.
 
 ---
 
-## Project Structure
+## Controlled Scenario Registry
+
+The Scenario Lab now contains four approved scenarios:
+
+| ID | Scenario | Vulnerable profile | Secure expectation | Target |
+|---|---|---:|---:|---|
+| `SCN-001` | Unauthorized Private Message Access | HTTP 200 | HTTP 403 | Message API |
+| `SCN-002` | Expired Authentication Token Acceptance | HTTP 200 | HTTP 401 | Authentication Service |
+| `SCN-003` | Malformed Synthetic Message Payload | HTTP 201 | HTTP 422 | Message API |
+| `SCN-004` | Local Request Burst Without Rate Control | final HTTP 200 | final HTTP 429 | API Gateway |
+
+Each scenario follows the same governed workflow:
+
+```text
+Approved scenario registry
+        ↓
+Policy pre-check
+        ↓
+Scenario Planner
+        ↓
+Real local HTTP test against Docker SecureMessenger
+        ↓
+Observer
+        ↓
+Schema-validated Security Analyst output
+        ↓
+Defensive Remediation Agent proposal
+        ↓
+PERMIT_WITH_APPROVAL
+        ↓
+Explicit human approval
+        ↓
+Secure sandbox profile applied
+        ↓
+Exact same scenario re-executed
+        ↓
+Expected secure HTTP behavior
+        ↓
+Policy verification + Twin snapshots + hash-chain finalization
+        ↓
+Persistent PostgreSQL evidence
+```
+
+The local sandbox contains deliberately synthetic behavior for each scenario. Resetting the demo restores the vulnerable profile; approved remediation switches the sandbox to secure profile `1.1`.
+
+---
+
+## Professional Run Analytics
+
+A new **Run Analytics** page derives metrics from PostgreSQL rather than Streamlit session state.
+
+It includes:
+
+- total run count
+- PASS count
+- FAIL count
+- interrupted/aborted count
+- rejected count
+- verification rate
+- policy block rate
+- average completed-run duration
+- human approvals
+- human rejections
+- human approval rate
+- per-scenario PASS/FAIL/interrupted breakdown
+- per-scenario verification rate
+- per-scenario average duration
+- daily run trend
+
+Analytics remain available after Streamlit restarts because they are reconstructed from the persistent evidence store.
+
+---
+
+## Enhanced Reports
+
+The **Reports** page reconstructs a historical run from PostgreSQL and includes:
+
+- executive run summary
+- scenario ID and objective
+- before/after HTTP evidence
+- structured finding
+- remediation proposal
+- human-oversight decisions
+- policy decisions
+- rule-level policy evidence
+- Digital Twin before/after state
+- Twin snapshots
+- evidence timeline
+- audit events
+- SHA-256 evidence-integrity status
+
+Exports:
+
+- JSON evidence file
+- timeline CSV
+- policy-rule CSV
+- audit CSV
+- PDF evidence report
+- complete ZIP evidence bundle containing JSON + CSV + PDF
+
+---
+
+## Deployment Hardening Foundations
+
+The project now includes code/configuration for the deployment-hardening roadmap while keeping local development simple.
+
+### Secrets management
+
+Local development uses a git-ignored `.env` file. The code also supports file-backed secrets through `<NAME>_FILE`, which is used by the hardened Compose profile.
+
+Never commit `.env`, passwords, access tokens, password hashes, TLS private keys, or deployment secret files.
+
+### Authentication and RBAC
+
+Authentication is optional for local development and enabled in the production-style Compose profile.
+
+Roles:
+
+| Role | Access |
+|---|---|
+| `admin` | full access |
+| `operator` | execute scenarios, view evidence, analytics and reports |
+| `auditor` | read-only evidence, analytics, compliance, audit and reports |
+
+Generate bcrypt hashes with:
+
+```bash
+python scripts/generate_password_hash.py
+```
+
+For local development set `AUTH_ENABLED=true` and place hashes in `.env` if you want to test the login gate.
+
+### Reverse proxy and HTTPS
+
+`docker-compose.prod.yml` includes Nginx with TLS termination. Generate local self-signed certificates only for a smoke test:
+
+PowerShell:
+
+```powershell
+./scripts/generate_local_tls.ps1
+```
+
+WSL/Linux:
+
+```bash
+bash scripts/generate_local_tls.sh
+```
+
+Real deployments must use certificates issued/managed according to the target infrastructure policy.
+
+### Database backups
+
+Create a compressed PostgreSQL backup:
+
+```bash
+python scripts/backup_database.py
+```
+
+Restore only after an explicit confirmation:
+
+```bash
+python scripts/restore_database.py backups/<backup>.sql.gz --confirm RESTORE
+python scripts/migrate_database.py
+```
+
+### Docker resource limits and service supervision
+
+Development and production-style Compose files include resource limits, health checks and `restart: unless-stopped`.
+
+### Network isolation
+
+The hardened Compose profile separates:
+
+- `frontend` network: Nginx ↔ Streamlit
+- internal `backend` network: Streamlit ↔ PostgreSQL ↔ SecureMessenger
+
+PostgreSQL and SecureMessenger do not publish host ports in the production-style profile.
+
+### CI/tests
+
+`.github/workflows/ci.yml` runs:
+
+- Python dependency installation
+- syntax compilation
+- focused Ruff correctness checks
+- pytest unit tests
+
+---
+
+## Architecture
+
+```text
+                         Browser
+                            │
+                     HTTPS / Nginx
+                            │
+                            ▼
+                     Streamlit UI
+                            │
+          ┌─────────────────┼─────────────────┐
+          ▼                 ▼                 ▼
+     Orchestrator       Policy Engine     RBAC / Auth
+          │                 │
+          ├────────────┐    │
+          ▼            ▼    ▼
+      AI Agents     Evidence Engine
+          │            │
+          ▼            ▼
+  SecureMessenger   PostgreSQL
+   Docker Sandbox       │
+          │             ▼
+          │          Analytics
+          │             │
+          └──────► Reports / PDF / CSV / JSON
+
+Local LLM: Ollama
+Digital Twin: state + topology + snapshots
+Evidence integrity: SHA-256 audit chain
+```
+
+---
+
+## Main Project Structure
 
 ```text
 ResponsibleAI_DigitalTwin/
-|
-|-- alembic/
-|   |-- env.py
-|   `-- versions/
-|       |-- 001_initial_schema.py
-|       |-- 002_run_lifecycle.py
-|       |-- 003_evidence_integrity.py
-|       |-- 004_policy_registry.py
-|       `-- 005_twin_snapshots.py
-|
-|-- models/
-|   |-- database_models.py
-|   |-- policy_models.py
-|   |-- twin_models.py
-|   `-- workflow_models.py
-|
-|-- pages/
-|   |-- overview.py
-|   |-- digital_twin.py
-|   |-- scenario_lab.py
-|   |-- agents.py
-|   |-- run_history.py
-|   |-- compliance.py
-|   |-- audit.py
-|   `-- reports.py
-|
-|-- sandbox/
-|   `-- secure_messenger/
-|       |-- app.py
-|       |-- database.py
-|       |-- models.py
-|       |-- Dockerfile
-|       `-- requirements.txt
-|
-|-- scripts/
-|   `-- migrate_database.py
-|
-|-- services/
-|   |-- agent_service.py
-|   |-- audit_service.py
-|   |-- database_service.py
-|   |-- evidence_service.py
-|   |-- ollama_service.py
-|   |-- orchestration_service.py
-|   |-- policy_registry_service.py
-|   |-- policy_service.py
-|   |-- repository_service.py
-|   |-- run_service.py
-|   |-- sandbox_service.py
-|   |-- security_test_service.py
-|   `-- twin_service.py
-|
-|-- app.py
-|-- main.py
-|-- docker-compose.yml
-|-- alembic.ini
-|-- requirements.txt
-|-- .env.example
-|-- .gitignore
-`-- README.md
+├── .github/workflows/ci.yml
+├── alembic/
+│   └── versions/
+│       ├── 001_initial_schema.py
+│       ├── 002_run_lifecycle.py
+│       ├── 003_evidence_integrity.py
+│       ├── 004_policy_registry.py
+│       └── 005_twin_snapshots.py
+├── deploy/
+│   ├── certs/
+│   ├── nginx/nginx.conf
+│   └── secrets/
+├── models/
+├── pages/
+│   ├── overview.py
+│   ├── digital_twin.py
+│   ├── scenario_lab.py
+│   ├── agents.py
+│   ├── run_history.py
+│   ├── analytics.py
+│   ├── reports.py
+│   ├── compliance.py
+│   └── audit.py
+├── sandbox/secure_messenger/
+├── scripts/
+│   ├── migrate_database.py
+│   ├── backup_database.py
+│   ├── restore_database.py
+│   ├── generate_password_hash.py
+│   ├── generate_local_tls.ps1
+│   └── generate_local_tls.sh
+├── services/
+│   ├── analytics_service.py
+│   ├── auth_service.py
+│   ├── config_service.py
+│   ├── report_service.py
+│   ├── scenario_registry_service.py
+│   └── ...
+├── tests/
+├── .env.example
+├── .gitignore
+├── Dockerfile
+├── docker-compose.yml
+├── docker-compose.prod.yml
+├── requirements.txt
+├── requirements-dev.txt
+├── app.py
+└── README.md
 ```
 
-## Prerequisites
+---
 
-Recommended development environment:
+# Local Development Setup
 
-- Python 3.12+
-- Docker Desktop
-- Docker Compose
-- WSL2 on Windows, or a Linux/macOS Docker environment
-- Ollama
-- Git
-- A local Ollama model such as `llama3:latest`
+## 1. Python environment
 
-The current development workflow was tested with Windows + PyCharm + WSL2 + Docker Desktop.
-
-## 1. Clone the Repository
-
-```bash
-git clone https://github.com/vikashmaheshwari97/ResponsibleAI_DigitalTwin.git
-cd ResponsibleAI_DigitalTwin
-```
-
-## 2. Create the Python Environment
-
-### Windows PowerShell
+Windows PowerShell:
 
 ```powershell
 python -m venv .venv
@@ -290,101 +310,64 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-### Linux/macOS
+## 2. Environment file
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-```
+If `.env` already exists from the current project, keep it.
 
-## 3. Configure Local Environment Variables
-
-Copy the example file:
-
-### Windows PowerShell
+For a new setup:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-### Linux/macOS
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` and replace the placeholder development credentials.
-
-Example:
+At minimum configure:
 
 ```dotenv
 POSTGRES_DB=rai_twin
 POSTGRES_USER=rai_user
-POSTGRES_PASSWORD=<your-local-password>
-RAI_DATABASE_URL=postgresql+psycopg://rai_user:<your-local-password>@127.0.0.1:5433/rai_twin
-SANDBOX_ADMIN_TOKEN=<your-local-admin-token>
+POSTGRES_PASSWORD=<local-password>
+POSTGRES_HOST=127.0.0.1
+POSTGRES_PORT=5433
+SANDBOX_ADMIN_TOKEN=<local-admin-token>
+SANDBOX_BASE_URL=http://127.0.0.1:8001
 OLLAMA_HOST=http://127.0.0.1:11434
+AUTH_ENABLED=false
 ```
 
-`.env` is excluded from Git and must never be committed.
+Your existing database password must continue to match the password with which the current PostgreSQL volume was initialized.
 
-For local PowerShell execution, load the important values into the process environment before starting Streamlit if your shell/tooling does not automatically load `.env`:
+## 3. Rebuild Docker SecureMessenger
 
-```powershell
-$env:POSTGRES_DB="rai_twin"
-$env:POSTGRES_USER="rai_user"
-$env:POSTGRES_PASSWORD="<your-local-password>"
-$env:RAI_DATABASE_URL="postgresql+psycopg://rai_user:<your-local-password>@127.0.0.1:5433/rai_twin"
-$env:SANDBOX_ADMIN_TOKEN="<your-local-admin-token>"
-$env:OLLAMA_HOST="http://127.0.0.1:11434"
-```
-
-## 4. Start Docker Services
-
-From WSL/Linux/macOS:
+The sandbox application changed to support all four controlled scenarios, so rebuild it once:
 
 ```bash
+docker compose down
+docker compose build --no-cache
 docker compose up -d
 docker compose ps
 ```
 
-Expected services:
+Do **not** use `docker compose down -v` unless you intentionally want to remove the persistent PostgreSQL volume.
+
+Expected:
 
 ```text
-rai-secure-messenger   Up
+rai-secure-messenger   Up (healthy)
 rai-postgres           Up (healthy)
 ```
 
-Check SecureMessenger:
+## 4. Database migrations
 
-```bash
-curl http://127.0.0.1:8001/health
+No new database schema migration is required for this roadmap package. The existing schema remains at:
+
+```text
+005_twin_snapshots (head)
 ```
 
-A fresh/reset environment should report approximately:
+Still run the safe migration helper:
 
-```json
-{
-  "status": "healthy",
-  "application": "SecureMessenger",
-  "version": "1.0",
-  "authorization_mode": "vulnerable"
-}
-```
-
-## 5. Apply Database Migrations
-
-From the activated Python environment:
-
-```bash
+```powershell
 python scripts/migrate_database.py
-```
-
-Verify:
-
-```bash
 python -m alembic current
 ```
 
@@ -394,51 +377,19 @@ Expected:
 005_twin_snapshots (head)
 ```
 
-Migration history:
+## 5. Ollama
 
-```bash
-python -m alembic history
-```
+Check:
 
-The migration chain is:
-
-```text
-001_initial_schema
-    ->
-002_run_lifecycle
-    ->
-003_evidence_integrity
-    ->
-004_policy_registry
-    ->
-005_twin_snapshots
-```
-
-## 6. Start Ollama
-
-Make sure Ollama is installed and running.
-
-```bash
-ollama serve
-```
-
-In another terminal:
-
-```bash
+```powershell
 ollama list
 ```
 
-The current PoC prefers a local model such as:
+The current PoC prefers a local model such as `llama3:latest`. If the local LLM is unavailable or exceeds the bounded timeout, schema-valid deterministic fallbacks keep the controlled workflow usable.
 
-```text
-llama3:latest
-```
+## 6. Start Streamlit
 
-If the LLM call times out or is unavailable, the analyst/remediation stages can use deterministic schema-valid fallbacks so the controlled workflow does not remain permanently stuck.
-
-## 7. Start Streamlit
-
-```bash
+```powershell
 python -m streamlit run app.py
 ```
 
@@ -448,127 +399,128 @@ Open:
 http://localhost:8501
 ```
 
-## 8. Run the Demonstration
+---
 
-1. Click **Reset Demo**.
-2. Open **AI Validation -> Security Scenario Lab**.
-3. Confirm:
-   - Ollama connected.
-   - SecureMessenger `v1.0 / vulnerable`.
-   - PostgreSQL connected.
-4. Start **Unauthorized Private Message Access**.
-5. Expected initial evidence:
+# Validation Checklist
 
-```text
-Requester: Alice
-Resource: MSG-204
-Expected: HTTP 403
-Observed: HTTP 200
-Result: FAIL
-```
+Use **Reset Demo** between scenarios so SecureMessenger returns to profile `1.0 / vulnerable`.
 
-6. Review the structured Security Analyst finding.
-7. Ask the Remediation Agent.
-8. Expected policy state:
+## SCN-001
+
+Expected initial:
 
 ```text
-PERMIT_WITH_APPROVAL
+HTTP 200 / FAIL
 ```
 
-9. Approve and re-test.
-10. Expected verification:
+After approved remediation:
 
 ```text
-Expected: HTTP 403
-Observed: HTTP 403
-Result: PASS
+HTTP 403 / PASS
 ```
 
-11. The Digital Twin should transition:
+## SCN-002
+
+Expected initial:
 
 ```text
-1.0 -> 1.1
-Message API: VULNERABLE -> SECURED
+expired synthetic token → HTTP 200 / FAIL
 ```
 
-12. Open **Run History** and inspect the persistent evidence.
-
-## Expected Successful Run
-
-A successful run should show approximately:
+After approved remediation:
 
 ```text
-Status: secured
-Result: PASS
-Model: llama3:latest
-Twin: 1.0 -> 1.1
+expired synthetic token → HTTP 401 / PASS
 ```
 
-Its evidence should include:
+## SCN-003
 
-- initial HTTP test
-- verification HTTP test
-- structured finding
-- remediation
-- policy decisions
-- rule-level policy results
-- human approval
-- agent timeline
-- Digital Twin snapshots
-- audit events
-- evidence-integrity hashes
-
-## Run Lifecycle
-
-The persistent lifecycle includes:
+Expected initial:
 
 ```text
-created
-  ->
-running
-  ->
-vulnerable
-  ->
-awaiting_approval
-  ->
-remediating
-  ->
-verifying
-  ->
-secured
+malformed synthetic POST /messages → HTTP 201 / FAIL
 ```
 
-Terminal alternatives include:
-
-- `failed`
-- `rejected`
-- `interrupted`
-- `aborted`
-
-If a development process stops mid-run, use **Run History** to mark the run interrupted or aborted rather than leaving it ambiguous.
-
-## Evidence Integrity
-
-Audit events are chained with SHA-256 values:
+After approved remediation:
 
 ```text
-event 1 -> event 2 -> event 3 -> ...
+same malformed payload → HTTP 422 / PASS
 ```
 
-Each event can store:
+## SCN-004
 
-- `sequence_number`
-- `previous_hash`
-- `event_hash`
-- `integrity_version`
+Expected initial:
 
-Run History and Audit Trail can verify whether a chain is valid.
+```text
+8-request localhost burst → final HTTP 200 / FAIL
+```
 
-For older development runs created before hashing was enabled, use **Rebuild / Backfill Hash Chain**.
+After approved remediation:
 
-## PostgreSQL Evidence Model
+```text
+same 8-request burst → final HTTP 429 / PASS
+```
 
-The database currently contains the following core tables:
+After successful runs, open:
+
+1. **Run History** — persistent evidence
+2. **Run Analytics** — aggregated metrics and trends
+3. **Reports** — PDF/JSON/CSV/ZIP exports
+4. **Compliance** — `POL-SCN-001` and `POL-RBAC-001` plus existing governance rules
+5. **Audit Trail** — evidence hash-chain verification
+
+---
+
+# Optional Local RBAC Test
+
+Generate three password hashes:
+
+```powershell
+python scripts/generate_password_hash.py
+```
+
+Add them to `.env`:
+
+```dotenv
+AUTH_ENABLED=true
+RAI_ADMIN_USERNAME=admin
+RAI_ADMIN_PASSWORD_HASH=<bcrypt-hash>
+RAI_OPERATOR_USERNAME=operator
+RAI_OPERATOR_PASSWORD_HASH=<bcrypt-hash>
+RAI_AUDITOR_USERNAME=auditor
+RAI_AUDITOR_PASSWORD_HASH=<bcrypt-hash>
+```
+
+Restart Streamlit. The auditor role will not receive the Scenario Lab page; operator/admin can execute governed workflows.
+
+---
+
+# Production-Style Local Hardening Smoke Test
+
+This is **not** the University of Tartu deployment. It is only a local validation of the hardening configuration.
+
+1. Create deployment secret files under `deploy/secrets/`.
+2. Generate local TLS material under `deploy/certs/`.
+3. Ensure Ollama is reachable through `OLLAMA_HOST`.
+4. Run:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+Then use:
+
+```text
+https://localhost:8443
+```
+
+The self-signed certificate will produce a browser warning during local testing.
+
+---
+
+## Persistent Evidence Tables
+
+The current PostgreSQL schema contains:
 
 ```text
 simulation_runs
@@ -585,145 +537,61 @@ twin_snapshots
 alembic_version
 ```
 
-## Safety Design
+No destructive schema migration is included in this upgrade.
 
-The PoC deliberately limits security validation to:
+---
 
-- local Docker services
-- localhost targets
-- synthetic identities
-- synthetic messages
-- predefined safe validation flows
-- defensive remediation
-- explicit human approval before security-changing actions
-- post-remediation verification
+## Governance Rules
 
-Do not repurpose the demonstration against systems that you do not own or have explicit permission to test.
+The registry includes:
 
-## Development Status
+| Rule ID | Purpose |
+|---|---|
+| `POL-SBX-001` | Sandbox-only execution |
+| `POL-DATA-001` | Synthetic data only |
+| `POL-NET-001` | External targets prohibited |
+| `POL-DB-001` | Persistent evidence store required |
+| `POL-SCN-001` | Approved scenario registry only |
+| `POL-RBAC-001` | Authorized role required for governed execution |
+| `POL-HUM-001` | Human approval required for remediation |
+| `POL-AUD-001` | Privileged actions must be auditable |
+| `POL-VER-001` | Remediation requires successful verification |
 
-| Phase | Status |
+These are technical controls for the research prototype. The project does not itself establish legal compliance with the EU AI Act, GDPR, or another legal regime.
+
+---
+
+## Development Progress After This Package
+
+| Area | State |
 |---|---:|
 | Streamlit visual PoC | 100% |
-| Professional Digital Twin UI | ~90% |
-| Digital Twin data model | ~90% |
-| Real LLM agents | ~95% |
-| Agent orchestration | ~92% |
+| Professional Digital Twin UI | ~95% |
+| Digital Twin data model | ~95% |
+| Real LLM agents | ~97% |
+| Agent orchestration | ~97% |
 | Docker sandbox | 100% |
-| Vulnerable messaging mini-app | 100% |
-| Real controlled security tests | 100% |
-| Policy/compliance engine | ~92% |
-| PostgreSQL + persistent audit evidence | ~95% |
-| UT server deployment | Not started |
+| SecureMessenger synthetic mini-app | 100% |
+| Controlled security tests | 100% for 4 approved scenarios |
+| Policy/compliance engine | ~97% |
+| PostgreSQL + audit/evidence | ~98% |
+| Run Analytics | implemented |
+| Enhanced Reports | implemented |
+| Deployment-hardening foundations | implemented in code; deployment validation still required |
+| University of Tartu server deployment | **deferred / not started** |
 
-## Roadmap
+---
 
-The next development milestones are:
+## Next Major Milestone
 
-1. **Multiple controlled safe scenarios**
-   - invalid/expired synthetic authentication token
-   - malformed synthetic input validation
-   - local rate/abuse-control scenario
+The next major project milestone is **University of Tartu Server Deployment**, but it is intentionally postponed until the local multi-scenario, analytics, reporting and hardening package has been validated end-to-end.
 
-2. **Professional Run Analytics**
-   - total/pass/fail/interrupted counts
-   - verification rate
-   - policy block rate
-   - average run duration
-   - human-approval statistics
-   - per-scenario trends
+Before UT deployment, validate all four scenarios, RBAC, backups, exports, CI, and the local HTTPS production-style profile.
 
-3. **Enhanced Database-Backed Reports**
-   - richer run summary
-   - evidence timeline
-   - Twin before/after views
-   - policy and human-oversight sections
-   - PDF/JSON/CSV export bundles
+---
 
-4. **Deployment Hardening**
-   - secrets management
-   - authentication and role-based access
-   - reverse proxy and HTTPS
-   - database backups
-   - Docker resource limits
-   - service supervision
-   - network isolation
-   - CI/tests
+## Research Prototype Disclaimer
 
-5. **University of Tartu Server Deployment**
+This repository demonstrates technical mechanisms for Responsible AI oversight, Digital Twin state management, controlled security validation, safe agent orchestration, policy-controlled remediation, persistent evidence, analytics, reporting, and auditability.
 
-## Troubleshooting
-
-### PostgreSQL is offline
-
-```bash
-docker compose ps
-```
-
-Verify `rai-postgres` is healthy and ensure your `RAI_DATABASE_URL` matches the password in `.env`.
-
-### SecureMessenger is offline
-
-```bash
-curl http://127.0.0.1:8001/health
-```
-
-Then:
-
-```bash
-docker compose up -d
-```
-
-### Ollama is unavailable
-
-```bash
-ollama list
-```
-
-and:
-
-```bash
-ollama serve
-```
-
-The platform can use a deterministic structured fallback if the local model is unavailable.
-
-### Alembic is not at head
-
-```bash
-python scripts/migrate_database.py
-python -m alembic current
-```
-
-Expected:
-
-```text
-005_twin_snapshots (head)
-```
-
-### Old run is stuck in `vulnerable`
-
-Open **Run History** and mark the old development run as **Interrupted** or **Aborted**.
-
-## Research / Prototype Disclaimer
-
-This repository is a research prototype demonstrating technical mechanisms for:
-
-- Responsible AI oversight
-- Digital Twin state management
-- safe AI-agent orchestration
-- policy-controlled remediation
-- auditability and evidence persistence
-- local security validation
-
-It is not a production security product and does not itself establish compliance with any law or regulation.
-
-## Author
-
-**Vikash Chander Maheshwari**
-
-Project repository owner: `vikashmaheshwari97`
-
-## License
-
-No open-source license is included yet. Add a license before distributing or accepting external contributions if you intend to make the repository reusable by others.
+It is not a production security-testing product and must not be used to target systems without explicit authorization.

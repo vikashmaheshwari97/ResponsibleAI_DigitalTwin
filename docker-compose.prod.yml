@@ -1,0 +1,125 @@
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: rai-nginx
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "8443:443"
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/certs:/etc/nginx/certs:ro
+    mem_limit: 128m
+    cpus: 0.50
+    restart: unless-stopped
+    networks:
+      - frontend
+
+  app:
+    build:
+      context: .
+    container_name: rai-app
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB}"
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      SANDBOX_ADMIN_TOKEN_FILE: /run/secrets/sandbox_admin_token
+      SANDBOX_BASE_URL: http://secure-messenger:8000
+      OLLAMA_HOST: "${OLLAMA_HOST:-http://host.docker.internal:11434}"
+      AUTH_ENABLED: "true"
+      AUTH_SESSION_TIMEOUT_MINUTES: "${AUTH_SESSION_TIMEOUT_MINUTES:-60}"
+      RAI_ADMIN_USERNAME: "${RAI_ADMIN_USERNAME:-admin}"
+      RAI_ADMIN_PASSWORD_HASH_FILE: /run/secrets/admin_password_hash
+      RAI_OPERATOR_USERNAME: "${RAI_OPERATOR_USERNAME:-operator}"
+      RAI_OPERATOR_PASSWORD_HASH_FILE: /run/secrets/operator_password_hash
+      RAI_AUDITOR_USERNAME: "${RAI_AUDITOR_USERNAME:-auditor}"
+      RAI_AUDITOR_PASSWORD_HASH_FILE: /run/secrets/auditor_password_hash
+    secrets:
+      - postgres_password
+      - sandbox_admin_token
+      - admin_password_hash
+      - operator_password_hash
+      - auditor_password_hash
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      secure-messenger:
+        condition: service_healthy
+    mem_limit: 1g
+    cpus: 2.0
+    restart: unless-stopped
+    networks:
+      - frontend
+      - backend
+
+  secure-messenger:
+    build:
+      context: ./sandbox/secure_messenger
+    container_name: rai-secure-messenger-prod
+    environment:
+      APP_VERSION: "1.0"
+      SECURITY_PROFILE: "vulnerable"
+      SANDBOX_ADMIN_TOKEN_FILE: /run/secrets/sandbox_admin_token
+    secrets:
+      - sandbox_admin_token
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    mem_limit: 256m
+    cpus: 1.0
+    restart: unless-stopped
+    networks:
+      - backend
+
+  postgres:
+    image: postgres:17
+    container_name: rai-postgres-prod
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB}"
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - rai_postgres_prod_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    mem_limit: 1g
+    cpus: 2.0
+    restart: unless-stopped
+    networks:
+      - backend
+
+volumes:
+  rai_postgres_prod_data:
+
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
+    internal: true
+
+secrets:
+  postgres_password:
+    file: ./deploy/secrets/postgres_password.txt
+  sandbox_admin_token:
+    file: ./deploy/secrets/sandbox_admin_token.txt
+  admin_password_hash:
+    file: ./deploy/secrets/admin_password_hash.txt
+  operator_password_hash:
+    file: ./deploy/secrets/operator_password_hash.txt
+  auditor_password_hash:
+    file: ./deploy/secrets/auditor_password_hash.txt

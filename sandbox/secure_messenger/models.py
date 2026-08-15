@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -11,5 +15,6 @@ class LoginResponse(BaseModel):
 
 
 class SandboxConfigRequest(BaseModel):
-    authorization_mode: str = Field(pattern="^(vulnerable|secure)$")
-    version: str
+    security_profile: Literal["vulnerable", "secure"] | None = None
+    authorization_mode: Literal["vulnerable", "secure"] | None = None
+    version: str = Field(min_length=1)

@@ -1,0 +1,13 @@
+.git
+.github
+.venv
+.idea
+.env
+__pycache__
+.pytest_cache
+backups
+reports
+exports
+deploy/certs
+deploy/secrets
+*.pyc

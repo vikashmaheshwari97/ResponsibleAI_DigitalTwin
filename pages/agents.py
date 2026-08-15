@@ -20,7 +20,7 @@ for index, (agent, status) in enumerate(st.session_state.agent_status.items()):
     with cols[index % 3]:
         with st.container(border=True):
             st.markdown(f"### {icons.get(agent, '🤖')} {agent}")
-            if status == "Completed":
+            if status in {"Completed", "Applied"}:
                 st.success("✓ Completed")
             elif status in {"Running", "Proposal Ready"}:
                 st.warning(status)

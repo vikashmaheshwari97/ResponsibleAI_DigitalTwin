@@ -1,6 +1,7 @@
 import pandas as pd
 import streamlit as st
 from services.audit_service import get_persistent_audit_events
+from services.auth_service import can_manage_governance
 from services.database_service import database_health
 from services.evidence_service import apply_hash_chain_to_run, verify_hash_chain
 from services.repository_service import list_runs
@@ -17,7 +18,12 @@ if run_id:
     if integrity["valid"]: st.success(f"Evidence integrity VALID · {integrity['hashed_events']} hashed event(s)")
     else:
         st.warning(f"Evidence chain requires attention: {integrity.get('reason','not hashed')}")
-        if st.button("Backfill / Rebuild Hash Chain"): apply_hash_chain_to_run(run_id); st.rerun()
+        if can_manage_governance():
+            if st.button("Backfill / Rebuild Hash Chain"):
+                apply_hash_chain_to_run(run_id)
+                st.rerun()
+        else:
+            st.caption("Admin role required to rebuild the hash chain.")
 st.divider()
 if not events: st.info("No persistent audit events.")
 else:

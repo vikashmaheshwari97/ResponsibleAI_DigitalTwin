@@ -44,6 +44,7 @@ class RunStatus(str, Enum):
     remediating = "remediating"
     verifying = "verifying"
     secured = "secured"
+    validated = "validated"
     failed = "failed"
     rejected = "rejected"
     interrupted = "interrupted"

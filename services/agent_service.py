@@ -1,13 +1,14 @@
+from __future__ import annotations
+
 from datetime import datetime
 
 import streamlit as st
 
 from models.workflow_models import FindingAnalysis, RemediationPlan
 from services.audit_service import add_audit_event
+from services.auth_service import current_username
 from services.ollama_service import analyse_security_finding, propose_remediation
-from services.policy_service import (
-    record_remediation_policy,
-)
+from services.policy_service import record_remediation_policy
 from services.repository_service import save_agent_event
 from services.run_service import (
     complete_run,
@@ -20,10 +21,8 @@ from services.run_service import (
     record_structured_finding,
 )
 from services.sandbox_service import apply_secure_mode, get_sandbox_health
-from services.security_test_service import (
-    format_security_evidence,
-    run_cross_user_message_test,
-)
+from services.scenario_registry_service import get_scenario
+from services.security_test_service import format_security_evidence, run_scenario_test
 from services.twin_service import (
     mark_secured,
     mark_vulnerability,
@@ -36,6 +35,10 @@ from services.twin_service import (
 def _current_run_id() -> str | None:
     run = get_current_run()
     return run.run_id if run else None
+
+
+def _scenario():
+    return get_scenario(st.session_state.selected_scenario_id)
 
 
 def add_agent_event(
@@ -51,9 +54,7 @@ def add_agent_event(
         "Status": status,
         "Type": event_type,
     }
-
     st.session_state.agent_events.append(event)
-
     run_id = _current_run_id()
     if run_id:
         save_agent_event(
@@ -63,7 +64,6 @@ def add_agent_event(
             status=status,
             event_type=event_type,
         )
-
     return event
 
 
@@ -72,51 +72,46 @@ def update_agent_status(agent: str, status: str) -> None:
 
 
 def execute_planner() -> None:
+    scenario = _scenario()
     update_agent_status("Scenario Planner", "Completed")
-
     add_agent_event(
         "Scenario Planner",
-        "Created the controlled cross-user authorization validation plan.",
+        f"Prepared approved controlled plan {scenario.scenario_id}: {scenario.name}.",
     )
     add_audit_event(
         actor="Scenario Planner",
         action="Controlled security scenario generated",
         category="Agent",
-        details=st.session_state.selected_scenario,
+        details=f"{scenario.scenario_id} · {scenario.name}",
     )
 
 
 def execute_security_tester() -> dict:
+    scenario = _scenario()
     update_agent_status("Security Testing Agent", "Running")
-
     try:
-        result = run_cross_user_message_test()
+        result = run_scenario_test(scenario.scenario_id)
         st.session_state.last_security_test = result
         record_initial_test(result)
-
         add_agent_event(
             "Security Testing Agent",
             (
-                "Executed a real HTTP authorization validation against Docker "
-                "SecureMessenger. "
-                f"Expected HTTP {result['expected_status']}; observed "
-                f"HTTP {result['observed_status']}."
+                f"Executed real local HTTP test for {scenario.scenario_id}. "
+                f"Expected HTTP {result['expected_status']}; observed HTTP "
+                f"{result['observed_status']}."
             ),
         )
         add_audit_event(
             actor="Security Testing Agent",
-            action="Real cross-user message authorization test executed",
+            action="Controlled real HTTP validation executed",
             category="Security Test",
             details=(
-                f"Alice requested {result['resource_id']}. Expected HTTP "
-                f"{result['expected_status']}; observed HTTP "
-                f"{result['observed_status']}."
+                f"scenario={scenario.scenario_id}; resource={result['resource_id']}; "
+                f"expected={result['expected_status']}; observed={result['observed_status']}"
             ),
         )
-
         update_agent_status("Security Testing Agent", "Completed")
         return result
-
     except Exception as exc:
         update_agent_status("Security Testing Agent", "Failed")
         add_agent_event(
@@ -126,7 +121,7 @@ def execute_security_tester() -> dict:
         )
         add_audit_event(
             actor="Security Testing Agent",
-            action="Sandbox test failed",
+            action="Controlled sandbox test failed",
             status="Failed",
             category="Security Test",
             details=str(exc),
@@ -135,24 +130,24 @@ def execute_security_tester() -> dict:
 
 
 def execute_observer() -> bool:
+    scenario = _scenario()
     update_agent_status("Observer Agent", "Running")
     result = st.session_state.get("last_security_test")
-
     if not result:
         update_agent_status("Observer Agent", "Failed")
-        raise RuntimeError("No real security test result is available.")
+        raise RuntimeError("No real security-test result is available.")
 
     detected = bool(result["vulnerability_detected"])
-
-    action = (
-        "Observed real cross-user disclosure: Alice received Bob's "
-        "MSG-204 with HTTP 200."
-        if detected
-        else (
-            f"Cross-user access denied as expected. "
-            f"Observed HTTP {result['observed_status']}."
+    if detected:
+        action = (
+            f"Observed expected-secure HTTP {result['expected_status']} but the vulnerable "
+            f"sandbox returned HTTP {result['observed_status']} for {scenario.name}."
         )
-    )
+    else:
+        action = (
+            f"Observed secure behavior for {scenario.name}: HTTP "
+            f"{result['observed_status']}."
+        )
 
     add_agent_event("Observer Agent", action)
     add_audit_event(
@@ -161,133 +156,84 @@ def execute_observer() -> bool:
         category="Observation",
         details=action,
     )
-
     update_agent_status("Observer Agent", "Completed")
     return detected
 
 
+def _fallback_analysis() -> FindingAnalysis:
+    scenario = _scenario()
+    return FindingAnalysis(
+        classification=scenario.classification,
+        severity=scenario.severity,
+        confidence=scenario.confidence,
+        affected_component=scenario.affected_component,
+        root_cause=scenario.root_cause,
+        security_impact=scenario.security_impact,
+        recommended_action=scenario.recommended_action,
+    )
+
 
 def execute_analyst() -> FindingAnalysis:
-    """
-    Execute the local structured analyst stage.
-
-    Important behavior:
-    - Ollama errors/timeouts use the deterministic structured fallback.
-    - Persistence/orchestration failures mark the agent Failed and are raised.
-    - The agent cannot silently remain in the Running state.
-    """
+    scenario = _scenario()
     update_agent_status("Security Analyst", "Running")
-
     try:
-        result = st.session_state.get(
-            "last_security_test"
-        )
-
+        result = st.session_state.get("last_security_test")
         if not result:
-            raise RuntimeError(
-                "No real security-test evidence is available."
-            )
+            raise RuntimeError("No real security-test evidence is available.")
 
-        evidence = format_security_evidence(
-            result
-        )
-
-        model = st.session_state.get(
-            "ollama_model"
-        )
-
+        evidence = format_security_evidence(result)
+        model = st.session_state.get("ollama_model")
         if model:
             try:
                 analysis = analyse_security_finding(
                     model=model,
                     evidence=evidence,
+                    scenario=scenario,
                 )
-
-                source = (
-                    f"Ollama structured output / {model}"
-                )
-
+                source = f"Ollama structured output / {model}"
             except Exception as llm_exc:
-                # A slow/unavailable local model must not block the full
-                # defensive workflow. The fallback is still schema-valid.
                 analysis = _fallback_analysis()
-
                 source = (
                     "Deterministic structured fallback · "
                     f"Ollama unavailable/timeout: {llm_exc}"
                 )
         else:
             analysis = _fallback_analysis()
-            source = (
-                "Deterministic structured fallback"
-            )
+            source = "Deterministic structured fallback"
 
-        st.session_state.structured_finding = (
-            analysis.model_dump(
-                mode="json"
-            )
-        )
-
-        st.session_state.analyst_llm_output = (
-            analysis.model_dump(
-                mode="json"
-            )
-        )
-
-        st.session_state.analyst_source = (
-            source
-        )
-
-        record_structured_finding(
-            analysis
-        )
+        st.session_state.structured_finding = analysis.model_dump(mode="json")
+        st.session_state.analyst_llm_output = analysis.model_dump(mode="json")
+        st.session_state.analyst_source = source
+        record_structured_finding(analysis)
 
         if result["vulnerability_detected"]:
             mark_vulnerability()
 
-        update_agent_status(
-            "Security Analyst",
-            "Completed",
-        )
-
+        update_agent_status("Security Analyst", "Completed")
         add_agent_event(
             "Security Analyst",
-            (
-                "Generated schema-validated security analysis. "
-                f"Source: {source}."
-            ),
+            f"Generated schema-validated analysis for {scenario.scenario_id}. Source: {source}.",
         )
-
         add_audit_event(
             actor="Security Analyst",
             action="Structured security analysis generated",
             category="AI Analysis",
             details=(
-                f"Source: {source}; "
-                f"classification={analysis.classification}; "
-                f"severity={analysis.severity.value}; "
+                f"scenario={scenario.scenario_id}; source={source}; "
+                f"classification={analysis.classification}; severity={analysis.severity.value}; "
                 f"confidence={analysis.confidence.value}; "
                 f"component={analysis.affected_component.value}"
             ),
         )
-
         return analysis
-
     except Exception as exc:
-        update_agent_status(
-            "Security Analyst",
-            "Failed",
-        )
-
-        # Best effort logging. Do not hide the original exception if
-        # PostgreSQL/audit persistence also fails.
+        update_agent_status("Security Analyst", "Failed")
         try:
             add_agent_event(
                 "Security Analyst",
                 f"Structured analysis stage failed: {exc}",
                 status="Failed",
             )
-
             add_audit_event(
                 actor="Security Analyst",
                 action="Structured security analysis failed",
@@ -297,66 +243,38 @@ def execute_analyst() -> FindingAnalysis:
             )
         except Exception:
             pass
-
         raise
 
-def _fallback_analysis() -> FindingAnalysis:
-    return FindingAnalysis(
-        classification="Broken Object-Level Authorization",
-        severity="high",
-        confidence="high",
-        affected_component="Message API",
-        root_cause=(
-            "The authenticated requester is not checked against the owner "
-            "of the requested message resource."
-        ),
-        security_impact=(
-            "One synthetic user can retrieve another synthetic user's "
-            "private message."
-        ),
-        recommended_action=(
-            "Enforce object-level ownership validation and repeat the exact "
-            "same controlled HTTP test."
-        ),
-    )
 
+def _fallback_remediation() -> RemediationPlan:
+    scenario = _scenario()
+    return RemediationPlan(
+        title=scenario.remediation_title,
+        target_component=scenario.affected_component,
+        action_type=scenario.remediation_action_type,
+        proposed_change=scenario.remediation_change,
+        risk="low",
+        expected_security_benefit=scenario.remediation_benefit,
+        possible_side_effects=list(scenario.remediation_side_effects),
+        verification_test=scenario.verification_test,
+        requires_human_approval=True,
+        target_environment="Digital Twin sandbox only",
+    )
 
 
 def execute_remediation_agent() -> RemediationPlan:
-    update_agent_status(
-        "Remediation Agent",
-        "Running",
-    )
-
+    scenario = _scenario()
+    update_agent_status("Remediation Agent", "Running")
     try:
-        result = (
-            st.session_state.get(
-                "last_security_test"
-            )
-            or {}
-        )
-
-        evidence = (
-            format_security_evidence(result)
-            if result
-            else "No evidence."
-        )
-
-        finding_raw = st.session_state.get(
-            "structured_finding"
-        )
-
+        result = st.session_state.get("last_security_test") or {}
+        evidence = format_security_evidence(result) if result else "No evidence."
+        finding_raw = st.session_state.get("structured_finding")
         finding = (
-            FindingAnalysis.model_validate(
-                finding_raw
-            )
+            FindingAnalysis.model_validate(finding_raw)
             if finding_raw
             else _fallback_analysis()
         )
-
-        model = st.session_state.get(
-            "ollama_model"
-        )
+        model = st.session_state.get("ollama_model")
 
         if model:
             try:
@@ -364,102 +282,59 @@ def execute_remediation_agent() -> RemediationPlan:
                     model=model,
                     finding=finding,
                     evidence=evidence,
+                    scenario=scenario,
                 )
-
-                source = (
-                    f"Ollama structured output / {model}"
-                )
-
+                source = f"Ollama structured output / {model}"
             except Exception as llm_exc:
-                recommendation = (
-                    _fallback_remediation()
-                )
-
+                recommendation = _fallback_remediation()
                 source = (
                     "Deterministic structured fallback · "
                     f"Ollama unavailable/timeout: {llm_exc}"
                 )
         else:
-            recommendation = (
-                _fallback_remediation()
-            )
-            source = (
-                "Deterministic structured fallback"
-            )
+            recommendation = _fallback_remediation()
+            source = "Deterministic structured fallback"
 
-        recommendation.requires_human_approval = (
-            True
-        )
+        recommendation.requires_human_approval = True
+        recommendation.target_environment = "Digital Twin sandbox only"
+        recommendation.target_component = scenario.affected_component
 
-        recommendation.target_environment = (
-            "Digital Twin sandbox only"
-        )
-
-        st.session_state.structured_remediation = (
-            recommendation.model_dump(
-                mode="json"
-            )
-        )
-
-        st.session_state.remediation_llm_output = (
-            recommendation.model_dump(
-                mode="json"
-            )
-        )
-
-        st.session_state.remediation_source = (
-            source
-        )
-
-        record_remediation(
-            recommendation
-        )
+        st.session_state.structured_remediation = recommendation.model_dump(mode="json")
+        st.session_state.remediation_llm_output = recommendation.model_dump(mode="json")
+        st.session_state.remediation_source = source
+        record_remediation(recommendation)
 
         policy = record_remediation_policy(
-            human_approved=False
+            scenario.scenario_id,
+            human_approved=False,
         )
-
-        update_agent_status(
-            "Remediation Agent",
-            "Proposal Ready",
-        )
-
+        update_agent_status("Remediation Agent", "Proposal Ready")
         add_agent_event(
             "Remediation Agent",
             (
-                "Generated schema-validated defensive remediation. "
-                f"Policy outcome: {policy.outcome.value}."
+                f"Generated schema-validated defensive remediation for "
+                f"{scenario.scenario_id}. Policy outcome: {policy.outcome.value}."
             ),
         )
-
         add_audit_event(
             actor="Remediation Agent",
             action="Structured defensive remediation proposal generated",
             category="AI Remediation",
             details=(
-                f"Source: {source}; "
-                f"policy={policy.outcome.value}; "
-                "human approval required."
+                f"scenario={scenario.scenario_id}; source={source}; "
+                f"policy={policy.outcome.value}; human approval required"
             ),
         )
-
         set_remediation_proposal()
-
         return recommendation
-
     except Exception as exc:
-        update_agent_status(
-            "Remediation Agent",
-            "Failed",
-        )
-
+        update_agent_status("Remediation Agent", "Failed")
         try:
             add_agent_event(
                 "Remediation Agent",
                 f"Remediation stage failed: {exc}",
                 status="Failed",
             )
-
             add_audit_event(
                 actor="Remediation Agent",
                 action="Structured remediation generation failed",
@@ -469,153 +344,126 @@ def execute_remediation_agent() -> RemediationPlan:
             )
         except Exception:
             pass
-
         raise
-
-def _fallback_remediation() -> RemediationPlan:
-    return RemediationPlan(
-        title="Enforce object-level authorization",
-        target_component="Message API",
-        action_type="authorization_control",
-        proposed_change=(
-            "Verify that the authenticated synthetic user owns the requested "
-            "message before returning the resource."
-        ),
-        risk="low",
-        expected_security_benefit=(
-            "Cross-user access to private synthetic messages is denied."
-        ),
-        possible_side_effects=[
-            "Unauthorized requests now receive HTTP 403.",
-            "Existing tests must account for ownership enforcement.",
-        ],
-        verification_test=(
-            "Repeat Alice → MSG-204 and require HTTP 403 while Alice → MSG-101 "
-            "continues to return HTTP 200."
-        ),
-        requires_human_approval=True,
-        target_environment="Digital Twin sandbox only",
-    )
 
 
 def approve_remediation() -> None:
-    # Exactly one persisted post-approval policy decision.
-    policy = record_remediation_policy(human_approved=True)
-
+    scenario = _scenario()
+    actor = current_username()
+    policy = record_remediation_policy(scenario.scenario_id, human_approved=True)
     if policy.outcome.value != "PERMIT":
-        raise RuntimeError(
-            f"Policy engine did not permit remediation: {policy.reason}"
-        )
+        raise RuntimeError(f"Policy engine did not permit remediation: {policy.reason}")
 
     st.session_state.remediation_policy_approved = True
-    record_human_decision("approved")
+    record_human_decision("approved", actor=actor)
     mark_remediating()
-
+    update_agent_status("Remediation Agent", "Approved")
     add_agent_event(
-        "Human Reviewer",
-        "Approved the remediation for the Digital Twin sandbox only.",
+        actor,
+        f"Approved remediation for {scenario.scenario_id} in the Digital Twin sandbox only.",
         event_type="Human",
     )
     add_audit_event(
-        actor="Human Reviewer",
+        actor=actor,
         action="Approved remediation",
         category="Human Oversight",
-        details=(
-            "Approval recorded before sandbox configuration change; "
-            f"policy={policy.outcome.value}."
-        ),
+        details=f"scenario={scenario.scenario_id}; policy={policy.outcome.value}",
     )
 
 
 def reject_remediation() -> None:
-    record_human_decision("rejected")
-
+    scenario = _scenario()
+    actor = current_username()
+    record_human_decision("rejected", actor=actor)
     add_agent_event(
-        "Human Reviewer",
-        "Rejected the remediation. No sandbox change was applied.",
+        actor,
+        f"Rejected remediation for {scenario.scenario_id}. No sandbox change was applied.",
         status="Rejected",
         event_type="Human",
     )
     add_audit_event(
-        actor="Human Reviewer",
+        actor=actor,
         action="Rejected remediation",
         status="Rejected",
         category="Human Oversight",
+        details=f"scenario={scenario.scenario_id}",
     )
     reject_remediation_state()
 
 
 def execute_verification() -> dict:
+    scenario = _scenario()
     update_agent_status("Verification Agent", "Running")
-
     if not st.session_state.get("remediation_policy_approved"):
         update_agent_status("Verification Agent", "Failed")
         raise RuntimeError(
-            "Verification cannot apply remediation without a recorded "
-            "PERMIT policy decision after human approval."
+            "Verification cannot apply remediation without a recorded PERMIT "
+            "decision after human approval."
         )
 
     mark_verifying()
-
     config = apply_secure_mode()
     health = get_sandbox_health()
     sync_twin_from_sandbox(health)
 
     add_audit_event(
         actor="Sandbox Controller",
-        action="Applied approved secure authorization mode",
+        action="Applied approved secure sandbox profile",
         category="Remediation",
         details=(
-            f"SecureMessenger version {config.get('version')} / "
-            f"{config.get('authorization_mode')}"
+            f"scenario={scenario.scenario_id}; version={config.get('version')}; "
+            f"profile={config.get('security_profile', config.get('authorization_mode'))}"
         ),
     )
 
-    verification = run_cross_user_message_test()
+    verification = run_scenario_test(scenario.scenario_id)
     st.session_state.verification_test = verification
-
     passed = (
-        verification["observed_status"] == 403
-        and verification["result"] == "PASS"
+        verification["result"] == "PASS"
+        and verification["observed_status"] == verification["expected_status"]
     )
 
     add_agent_event(
         "Verification Agent",
         (
-            "Re-ran the exact same real HTTP scenario. Expected HTTP 403; "
-            f"observed HTTP {verification['observed_status']}."
+            f"Re-ran {scenario.scenario_id}. Expected HTTP "
+            f"{verification['expected_status']}; observed HTTP "
+            f"{verification['observed_status']}."
         ),
         status="Completed" if passed else "Failed",
     )
     add_audit_event(
         actor="Verification Agent",
-        action="Real post-remediation authorization test executed",
+        action="Real post-remediation scenario re-executed",
         status="Success" if passed else "Failed",
         category="Verification",
         details=(
-            f"Expected HTTP 403; observed HTTP "
-            f"{verification['observed_status']}."
+            f"scenario={scenario.scenario_id}; expected={verification['expected_status']}; "
+            f"observed={verification['observed_status']}"
         ),
     )
 
     if not passed:
         update_agent_status("Verification Agent", "Failed")
         raise RuntimeError(
-            "Verification failed: sandbox did not return HTTP 403."
+            "Verification failed: the sandbox did not produce the scenario's "
+            "expected secure HTTP response."
         )
 
     update_agent_status("Verification Agent", "Completed")
+    update_agent_status("Remediation Agent", "Applied")
     mark_secured()
     complete_run(
         verification=verification,
         final_twin_version=st.session_state.twin["version"],
     )
-
     add_audit_event(
         actor="Verification Agent",
         action="Remediation verified successfully",
         category="Verification",
-        details="Cross-user request is denied with HTTP 403.",
+        details=(
+            f"scenario={scenario.scenario_id}; secure response="
+            f"HTTP {verification['observed_status']}"
+        ),
     )
-
     return verification

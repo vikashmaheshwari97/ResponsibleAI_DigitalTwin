@@ -117,13 +117,13 @@ def save_remediation(run_id: str, remediation: RemediationPlan) -> None:
         db.commit()
 
 
-def save_human_decision(run_id: str, remediation_id: str | None, decision: str) -> None:
+def save_human_decision(run_id: str, remediation_id: str | None, decision: str, actor: str = "Human Reviewer") -> None:
     with get_database_session() as db:
         stmt = select(HumanDecisionRecord).where(HumanDecisionRecord.run_id == run_id, HumanDecisionRecord.decision == decision)
         if remediation_id is not None:
             stmt = stmt.where(HumanDecisionRecord.remediation_id == remediation_id)
         if db.scalars(stmt).first() is None:
-            db.add(HumanDecisionRecord(run_id=run_id, remediation_id=remediation_id, decision=decision, actor="Human Reviewer"))
+            db.add(HumanDecisionRecord(run_id=run_id, remediation_id=remediation_id, decision=decision, actor=actor))
             db.commit()
 
 

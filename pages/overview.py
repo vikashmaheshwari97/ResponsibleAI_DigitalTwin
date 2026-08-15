@@ -29,7 +29,7 @@ with left:
 with right:
     st.subheader("Twin Status")
     phase = st.session_state.phase
-    if phase == "secured":
+    if phase in {"secured", "validated"}:
         st.success("✓ Validation passed")
     elif phase in {"vulnerable", "awaiting_approval"}:
         st.error("⚠ High-risk finding detected")

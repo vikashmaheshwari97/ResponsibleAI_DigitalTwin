@@ -1,198 +1,163 @@
+from __future__ import annotations
+
 import time
 
+import pandas as pd
 import streamlit as st
 
-from models.workflow_models import PolicyDecision, PolicyOutcome
 from services.agent_service import reject_remediation
-from services.ollama_service import (
-    choose_preferred_model,
-    get_available_models,
-)
+from services.auth_service import can_execute_scenarios, current_identity
+from services.database_service import database_health
+from services.ollama_service import choose_preferred_model, get_available_models
 from services.orchestration_service import (
     approve_and_verify,
     prepare_remediation,
     start_security_validation,
 )
-from services.policy_service import (
-    evaluate_remediation_policy,
-    get_sandbox_controls,
-    validate_simulation_policy,
-)
+from services.policy_service import validate_simulation_policy
 from services.run_service import get_current_run
-from services.sandbox_service import get_sandbox_health
-from services.twin_service import (
-    render_digital_twin,
-    sync_twin_from_sandbox,
-)
+from services.sandbox_service import get_sandbox_health, reset_sandbox
+from services.scenario_registry_service import get_scenario, list_scenarios
+from services.twin_service import render_digital_twin, select_scenario, sync_twin_from_sandbox
 
 
 def render_policy_decision(raw: dict | None, title: str = "Policy Decision"):
     if not raw:
         return
-
-    decision = PolicyDecision.model_validate(raw)
-
-    st.markdown(f"### ⚖️ {title}")
-
-    if decision.outcome == PolicyOutcome.permit:
-        st.success(f"✓ {decision.outcome.value}")
-    elif decision.outcome == PolicyOutcome.permit_with_approval:
-        st.warning(f"⚠ {decision.outcome.value}")
-    else:
-        st.error(f"✕ {decision.outcome.value}")
-
     with st.container(border=True):
-        st.write(f"**Action:** {decision.action}")
-        st.write(f"**Target:** {decision.target}")
-        st.write(f"**Environment:** {decision.environment}")
-        st.write(f"**Reason:** {decision.reason}")
+        st.markdown(f"#### {title}")
+        outcome = raw.get("outcome")
+        if outcome == "PERMIT":
+            st.success("PERMIT")
+        elif outcome == "PERMIT_WITH_APPROVAL":
+            st.warning("PERMIT_WITH_APPROVAL")
+        else:
+            st.error(outcome or "UNKNOWN")
+        st.caption(raw.get("reason", ""))
+        controls = raw.get("controls", [])
+        if controls:
+            st.dataframe(
+                pd.DataFrame(
+                    [
+                        {
+                            "Control": item.get("control"),
+                            "Passed": item.get("passed"),
+                            "Evidence": item.get("evidence"),
+                        }
+                        for item in controls
+                    ]
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
 
-        for control in decision.controls:
-            icon = "✓" if control.passed else "✕"
-            st.caption(f"{icon} {control.control}: {control.evidence}")
 
+def render_test_result(result: dict, heading: str) -> None:
+    st.markdown(f"#### {heading}")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Expected HTTP", result.get("expected_status"))
+    c2.metric("Observed HTTP", result.get("observed_status"))
+    c3.metric("Result", result.get("result"))
+    st.caption(result.get("request_summary", ""))
+    with st.expander("Raw synthetic HTTP evidence"):
+        st.json(result.get("response"))
+
+
+if not can_execute_scenarios():
+    identity = current_identity()
+    st.error(
+        f"Role '{identity.get('role')}' has read-only access. "
+        "Only admin/operator roles may execute controlled scenarios."
+    )
+    st.stop()
 
 st.title("🧪 Security Scenario Lab")
 st.caption(
-    "Run a controlled real HTTP authorization test against the Docker "
-    "SecureMessenger Digital Twin. Ollama now returns schema-validated "
-    "security findings and remediation plans."
+    "Approved synthetic localhost scenarios with policy enforcement, local LLM analysis, "
+    "human approval and real post-remediation verification."
 )
 
-st.subheader("AI Runtime")
-ollama_status = get_available_models()
-
-if ollama_status["connected"] and ollama_status["models"]:
-    models = ollama_status["models"]
-    current_model = st.session_state.get("ollama_model")
-    preferred_model = (
-        current_model
-        if current_model in models
-        else choose_preferred_model(models)
-    )
-
-    selected_model = st.selectbox(
-        "Local Ollama model",
-        models,
-        index=models.index(preferred_model),
-        disabled=st.session_state.phase != "ready",
-    )
-    st.session_state.ollama_model = selected_model
-    st.success(f"🦙 Ollama connected · using {selected_model}")
-else:
-    st.warning(
-        "Ollama unavailable. The workflow can still run using schema-valid "
-        "deterministic fallbacks."
-    )
-
-st.subheader("Sandbox Runtime")
 sandbox = get_sandbox_health()
 sync_twin_from_sandbox(sandbox)
+db = database_health()
+ollama = get_available_models()
 
-if sandbox["available"]:
-    st.success(
-        f"🐳 Docker SecureMessenger connected · v{sandbox['version']} · "
-        f"{sandbox['authorization_mode']}"
-    )
-else:
-    st.error(
-        "SecureMessenger sandbox is offline. Start it with "
-        "`docker compose up -d --build`."
-    )
+runtime_cols = st.columns(3)
+with runtime_cols[0]:
+    if ollama["connected"]:
+        if not st.session_state.get("ollama_model"):
+            st.session_state.ollama_model = choose_preferred_model(ollama["models"])
+        st.success(f"🦙 Ollama · {st.session_state.get('ollama_model') or 'fallback'}")
+    else:
+        st.warning("🦙 Ollama offline · deterministic structured fallback enabled")
+with runtime_cols[1]:
+    if sandbox["available"]:
+        st.success(
+            f"🐳 SecureMessenger · v{sandbox['version']} · "
+            f"{sandbox.get('security_profile') or sandbox.get('authorization_mode')}"
+        )
+    else:
+        st.error("🐳 SecureMessenger offline")
+with runtime_cols[2]:
+    if db["connected"]:
+        st.success("🗄️ PostgreSQL evidence store connected")
+    else:
+        st.error("🗄️ PostgreSQL evidence store offline")
 
-st.divider()
-st.subheader("1. Security Scenario")
+if not sandbox["available"] or not db["connected"]:
+    st.error("Docker SecureMessenger and PostgreSQL must be available before a governed run.")
+    st.stop()
 
-st.selectbox(
+scenarios = list_scenarios()
+scenario_ids = [scenario.scenario_id for scenario in scenarios]
+current_id = st.session_state.get("selected_scenario_id", "SCN-001")
+if current_id not in scenario_ids:
+    current_id = "SCN-001"
+
+st.subheader("1. Approved Controlled Scenario")
+selected_id = st.selectbox(
     "Scenario",
-    ["Unauthorized Private Message Access"],
-    disabled=st.session_state.phase != "ready",
+    scenario_ids,
+    index=scenario_ids.index(current_id),
+    format_func=lambda scenario_id: f"{scenario_id} · {get_scenario(scenario_id).name}",
+    disabled=st.session_state.phase not in {"ready"},
+)
+if selected_id != st.session_state.get("selected_scenario_id"):
+    select_scenario(selected_id)
+
+scenario = get_scenario(st.session_state.selected_scenario_id)
+
+with st.container(border=True):
+    st.markdown(f"### {scenario.scenario_id} · {scenario.name}")
+    st.write(scenario.description)
+    st.write(f"**Objective:** {scenario.objective}")
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Category", scenario.category)
+    m2.metric("Target", scenario.affected_component.value)
+    m3.metric("Expected secure HTTP", scenario.expected_status)
+
+st.info(
+    "Safety boundary: all scenarios are predefined, synthetic, localhost-only and run "
+    "against the Docker SecureMessenger Digital Twin. No arbitrary URL or payload target "
+    "is accepted by the UI."
 )
 
-objective = st.text_area(
-    "Objective",
-    value=(
-        "Validate whether Alice can retrieve Bob's synthetic MSG-204. "
-        "Correct behavior is HTTP 403."
-    ),
-    height=90,
-    disabled=st.session_state.phase != "ready",
-)
-st.session_state.scenario_objective = objective
-
-current_run = get_current_run()
-if current_run:
-    st.caption(
-        f"Run: {current_run.run_id} · status: {current_run.status.value} · "
-        f"model: {current_run.model_name or 'fallback'}"
-    )
-
-st.subheader("2. AI Agent Team")
-agents = [
-    ("🧠", "Scenario Planner", "Creates the controlled validation plan"),
-    ("🛡️", "Security Testing Agent", "Executes the real approved HTTP test"),
-    ("👁️", "Observer Agent", "Interprets real sandbox behavior"),
-    ("🔍", "Security Analyst", "Returns schema-validated finding data"),
-    ("🔧", "Remediation Agent", "Returns schema-validated remediation data"),
-    ("✅", "Verification Agent", "Re-runs the exact same real HTTP test"),
-]
-
-cols = st.columns(3)
-for index, (icon, name, description) in enumerate(agents):
-    with cols[index % 3]:
-        with st.container(border=True):
-            st.markdown(f"### {icon} {name}")
-            st.caption(description)
-
-            status = st.session_state.agent_status[name]
-            if status == "Completed":
-                st.success("✓ Completed")
-            elif status == "Running":
-                st.warning("● Running")
-            elif status == "Proposal Ready":
-                st.warning("Proposal ready")
-            elif status == "Failed":
-                st.error("Failed")
-            elif status == "Standby":
-                st.info("Standby")
-            else:
-                st.info("Ready")
-
-st.subheader("3. Safety Boundary")
-controls = get_sandbox_controls()
-control_cols = st.columns(len(controls))
-
-for col, item in zip(control_cols, controls):
-    with col:
-        if item["enabled"]:
-            st.success(f"✓ {item['control']}")
-        else:
-            st.error(f"✕ {item['control']}")
-
-policy = validate_simulation_policy()
-
-if policy["allowed"]:
-    st.caption("✓ Policy engine: controlled validation permitted")
-else:
-    st.error("Policy engine blocked the simulation.")
-
-st.divider()
+policy_preview = validate_simulation_policy(scenario.scenario_id)
+with st.expander("Governance pre-check"):
+    render_policy_decision(policy_preview["decision"], "Pre-execution Policy Preview")
 
 if st.session_state.phase == "ready":
-    st.subheader("4. Launch Validation")
+    if (sandbox.get("security_profile") or sandbox.get("authorization_mode")) != "vulnerable":
+        st.warning("Sandbox is currently secure. Reset it before demonstrating vulnerability discovery.")
+        if st.button("Reset sandbox to vulnerable profile", use_container_width=True):
+            reset_sandbox()
+            st.rerun()
 
     can_run = (
-        sandbox["available"]
-        and policy["allowed"]
-        and sandbox.get("authorization_mode") == "vulnerable"
+        policy_preview["allowed"]
+        and sandbox["available"]
+        and db["connected"]
     )
-
-    if sandbox.get("authorization_mode") != "vulnerable":
-        st.warning(
-            "The sandbox is already secure. Use Reset Demo to restore "
-            "v1.0 vulnerable mode before starting a new run."
-        )
-
     if st.button(
         "▶ Start AI Security Simulation",
         type="primary",
@@ -201,265 +166,127 @@ if st.session_state.phase == "ready":
     ):
         st.session_state.simulation_count += 1
         st.session_state.orchestration_error = None
-
         try:
             with st.status(
-                "Executing controlled security validation...",
+                f"Executing {scenario.scenario_id} controlled validation...",
                 expanded=True,
             ) as status_box:
-
-                orchestration_result = (
-                    start_security_validation(
-                        progress=st.write
-                    )
-                )
-
-                run = (
-                    orchestration_result[
-                        "run"
-                    ]
-                )
-
-                test_result = (
-                    orchestration_result[
-                        "test_result"
-                    ]
-                )
-
-                vulnerability_detected = (
-                    orchestration_result[
-                        "vulnerability_detected"
-                    ]
-                )
-
-                if vulnerability_detected:
+                result = start_security_validation(progress=st.write)
+                if result["vulnerability_detected"]:
                     status_box.update(
-                        label=(
-                            "Schema-validated vulnerability discovered"
-                        ),
+                        label="Schema-validated vulnerability discovered",
                         state="error",
                         expanded=True,
                     )
                 else:
                     status_box.update(
-                        label=(
-                            "Validation passed"
-                        ),
+                        label="Secure behavior already present",
                         state="complete",
                         expanded=True,
                     )
-
             st.rerun()
-
         except Exception as exc:
-            st.error(
-                "The validation workflow stopped before completion."
-            )
-
-            st.exception(
-                exc
-            )
+            st.error("The validation workflow stopped before completion.")
+            st.exception(exc)
 
 elif st.session_state.phase == "vulnerable":
-    finding = st.session_state.current_finding
-    structured = st.session_state.structured_finding
-    test_result = st.session_state.last_security_test
-
-    st.error("🔴 Digital Twin state changed: Message API is vulnerable")
-
-    left, right = st.columns([1.7, 1], gap="large")
-
+    left, right = st.columns([1.4, 1], gap="large")
     with left:
-        with st.container(border=True):
-            st.markdown("## ⚠ High-Risk Finding")
-            st.markdown(f"### {finding['title']}")
-            st.write(f"**Finding ID:** {finding['id']}")
-            st.write(f"**Component:** {finding['component']}")
-            st.write(f"**Severity:** {finding['severity']}")
-            st.write(f"**Confidence:** {finding['confidence']}")
+        st.error(f"⚠ Finding detected · {scenario.classification}")
+        result = st.session_state.last_security_test
+        render_test_result(result, "Initial HTTP Evidence")
 
-        st.markdown("### 🔬 Real Sandbox Evidence")
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Requester", test_result["requesting_user"].title())
-        c2.metric("Resource", test_result["resource_id"])
-        c3.metric("Expected", f"HTTP {test_result['expected_status']}")
-        c4.metric("Observed", f"HTTP {test_result['observed_status']}")
+        if st.session_state.get("structured_finding"):
+            st.markdown("#### Schema-Validated Finding")
+            st.json(st.session_state.structured_finding)
+            st.caption(f"Source: {st.session_state.get('analyst_source')}")
 
-        with st.expander("View raw SecureMessenger response"):
-            st.json(test_result["response"])
-
-        st.markdown("### 🦙 Structured Security Analyst Assessment")
-        with st.container(border=True):
-            st.write(f"**Classification:** {structured['classification']}")
-            st.write(f"**Severity:** {structured['severity']}")
-            st.write(f"**Assessment confidence:** {structured['confidence'].title()}")
-            st.write(f"**Affected component:** {structured['affected_component']}")
-            st.write(f"**Root cause:** {structured['root_cause']}")
-            st.write(f"**Security impact:** {structured['security_impact']}")
-            st.write(
-                f"**Recommended action:** {structured['recommended_action']}"
-            )
-            st.caption(f"Source: {st.session_state.analyst_source}")
-
-        with st.expander("View validated analyst JSON"):
-            st.json(structured)
-
-        if st.button(
-            "🤖 Ask Remediation Agent",
-            type="primary",
-            use_container_width=True,
-        ):
-            with st.status(
-                "Generating structured defensive remediation...",
-                expanded=True,
-            ) as box:
-                st.write("Reading structured finding + real HTTP evidence")
-                st.write("Applying the Digital-Twin-only policy boundary")
+        if st.button("Ask Remediation Agent", type="primary", use_container_width=True):
+            with st.status("Generating governed remediation proposal...", expanded=True) as box:
                 prepare_remediation(progress=st.write)
-                box.update(
-                    label="Schema-validated remediation proposal ready",
-                    state="complete",
-                )
+                box.update(label="Remediation proposal ready", state="complete")
             st.rerun()
-
-    with right:
-        st.subheader("Affected Digital Twin")
-        render_digital_twin()
-
-elif st.session_state.phase == "awaiting_approval":
-    proposal = st.session_state.remediation_proposal
-    structured = st.session_state.structured_remediation
-
-    st.warning(
-        "⚠ Human approval required before changing the Docker Digital Twin sandbox"
-    )
-
-    left, right = st.columns([1.7, 1], gap="large")
-
-    with left:
-        with st.container(border=True):
-            st.markdown("## 🔧 Controlled Remediation Proposal")
-            st.markdown(f"### {structured['title']}")
-            st.write(f"**Action type:** {structured['action_type']}")
-            st.write(f"**Component:** {structured['target_component']}")
-            st.write(f"**Risk:** {structured['risk']}")
-            st.write(f"**Target:** {structured['target_environment']}")
-            st.write(f"**Proposed change:** {structured['proposed_change']}")
-            st.write(
-                f"**Expected benefit:** "
-                f"{structured['expected_security_benefit']}"
-            )
-
-            if structured["possible_side_effects"]:
-                st.write("**Possible side effects:**")
-                for item in structured["possible_side_effects"]:
-                    st.write(f"- {item}")
-
-            st.write(f"**Verification:** {structured['verification_test']}")
-            st.caption(f"Source: {st.session_state.remediation_source}")
-
-        with st.expander("View validated remediation JSON"):
-            st.json(structured)
-
-        # Show the actual action-level policy decision.
-        decision = evaluate_remediation_policy(human_approved=False)
-        render_policy_decision(
-            decision.model_dump(mode="json"),
-            title="Remediation Policy Decision",
-        )
-
-        reject_col, approve_col = st.columns(2)
-
-        with reject_col:
-            if st.button("✕ Reject", use_container_width=True):
-                reject_remediation()
-                st.rerun()
-
-        with approve_col:
-            if st.button(
-                "✓ Approve & Re-test",
-                type="primary",
-                use_container_width=True,
-            ):
-                with st.status(
-                    "Applying approved remediation and re-testing...",
-                    expanded=True,
-                ) as box:
-                    st.write("✓ Human approval recorded")
-                    time.sleep(0.2)
-
-                    st.write("⚖️ Policy engine re-evaluating approved action")
-                    time.sleep(0.2)
-
-                    st.write(
-                        "🔧 Switching SecureMessenger to secure "
-                        "authorization mode"
-                    )
-                    orchestration_result = approve_and_verify(progress=st.write)
-                    verification = orchestration_result["verification"]
-
-                    st.write(
-                        f"✅ Same real test re-run — expected HTTP 403, "
-                        f"observed HTTP {verification['observed_status']}"
-                    )
-
-                    box.update(
-                        label="Real remediation verified successfully",
-                        state="complete",
-                    )
-
-                st.rerun()
-
     with right:
         st.subheader("Current Digital Twin")
         render_digital_twin()
 
-elif st.session_state.phase == "secured":
-    verification = st.session_state.verification_test
-    run = get_current_run()
-
-    st.success(
-        "✅ Security remediation successfully verified inside the Digital Twin"
-    )
-
-    if run:
-        st.caption(
-            f"Completed run: {run.run_id} · result: {run.result} · "
-            f"{run.initial_twin_version} → {run.final_twin_version}"
-        )
-
+elif st.session_state.phase == "awaiting_approval":
     left, right = st.columns([1.5, 1], gap="large")
-
     with left:
-        with st.container(border=True):
-            st.markdown("## Validation Passed")
-            st.write(
-                "The same real HTTP authorization scenario was executed "
-                "after the approved remediation. The cross-user request "
-                "is now denied."
-            )
-            st.write("**Result: PASSED**")
+        st.warning("Human approval is required before any sandbox security change.")
+        st.markdown("#### Controlled Remediation Proposal")
+        st.json(st.session_state.structured_remediation)
+        st.caption(f"Source: {st.session_state.get('remediation_source')}")
+        render_policy_decision(st.session_state.policy_decision, "Remediation Policy Decision")
 
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Security Score", "92/100", "+31")
-        c2.metric("High-Risk Findings", "0", "-1")
-        c3.metric("Tests Passed", "96%", "+29%")
-
-        st.markdown("### 🔬 Post-Remediation Evidence")
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Resource", verification["resource_id"])
-        c2.metric("Expected", f"HTTP {verification['expected_status']}")
-        c3.metric("Observed", f"HTTP {verification['observed_status']}")
-
-        if run:
-            with st.expander("View complete SimulationRun JSON"):
-                st.json(run.public_dict())
-
-        st.info(
-            "Open Compliance for policy evidence, Audit Trail for the action "
-            "history, or Reports for the before/after summary."
-        )
-
+        reject_col, approve_col = st.columns(2)
+        with reject_col:
+            if st.button("✕ Reject", use_container_width=True):
+                reject_remediation()
+                st.rerun()
+        with approve_col:
+            if st.button("✓ Approve & Re-test", type="primary", use_container_width=True):
+                with st.status(
+                    "Applying approved remediation and re-testing...",
+                    expanded=True,
+                ) as box:
+                    st.write("✓ Human approval will be persisted")
+                    time.sleep(0.1)
+                    result = approve_and_verify(progress=st.write)
+                    verification = result["verification"]
+                    st.write(
+                        f"✅ Same scenario re-run — expected HTTP "
+                        f"{verification['expected_status']}, observed HTTP "
+                        f"{verification['observed_status']}"
+                    )
+                    box.update(
+                        label="Real remediation verified successfully",
+                        state="complete",
+                    )
+                st.rerun()
     with right:
-        st.subheader("Updated Digital Twin")
+        st.subheader("Current Digital Twin")
         render_digital_twin()
+
+elif st.session_state.phase in {"secured", "validated"}:
+    run = get_current_run()
+    if st.session_state.phase == "secured":
+        st.success(f"✅ {scenario.scenario_id} remediation verified successfully")
+    else:
+        st.success(f"✅ {scenario.scenario_id} already satisfied the secure expectation")
+
+    metrics = st.columns(4)
+    metrics[0].metric("Run", run.run_id if run else "—")
+    metrics[1].metric("Status", run.status.value if run else st.session_state.phase)
+    metrics[2].metric("Result", run.result if run else "PASS")
+    metrics[3].metric("Twin", st.session_state.twin["version"])
+
+    initial = st.session_state.get("last_security_test")
+    verification = st.session_state.get("verification_test")
+    if initial:
+        render_test_result(initial, "Initial HTTP Evidence")
+    if verification:
+        render_test_result(verification, "Verification HTTP Evidence")
+
+    st.subheader("Final Digital Twin")
+    render_digital_twin()
+    st.info("Open Run History, Analytics and Reports to inspect persisted evidence and exports.")
+
+elif st.session_state.phase in {"remediating", "verifying"}:
+    st.warning(f"Workflow state: {st.session_state.phase}. Wait for the active operation to finish.")
+
+else:
+    st.info(f"Current workflow phase: {st.session_state.phase}")
+
+st.divider()
+st.subheader("Agent State")
+st.dataframe(
+    pd.DataFrame(
+        [
+            {"Agent": agent, "Status": status}
+            for agent, status in st.session_state.agent_status.items()
+        ]
+    ),
+    use_container_width=True,
+    hide_index=True,
+)

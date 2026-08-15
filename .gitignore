@@ -15,6 +15,15 @@ env/
 .env.*
 !.env.example
 
+# Deployment secrets and TLS private material
+deploy/secrets/*.txt
+deploy/secrets/*.secret
+deploy/certs/*.key
+deploy/certs/*.crt
+deploy/certs/*.pem
+!deploy/secrets/README.md
+!deploy/certs/README.md
+
 # IDE
 .idea/
 .vscode/
@@ -25,11 +34,23 @@ Thumbs.db
 
 # Local outputs
 *.log
+backups/
 reports/
 exports/
 *_evidence_bundle.json
+*_evidence_bundle.zip
 *_persistent_audit.csv
+*_report.pdf
+*_timeline.csv
+*_policy.csv
+*_audit.csv
 
-# Backups
+# Build / caches
+build/
+dist/
+*.egg-info/
+
+# Backups / temporary
 *.bak
+*.tmp
 app_backup.py
