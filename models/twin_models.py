@@ -29,11 +29,14 @@ class DigitalTwin:
 
 
 def create_default_twin() -> dict:
+    # Keep this count aligned with sandbox/secure_messenger/database.py.
+    # The current controlled PoC has three concrete synthetic identities:
+    # Alice, Bob and Charlie.
     twin = DigitalTwin(
         name="SecureMessenger",
         version="1.0",
         environment="Sandbox",
-        synthetic_users=50,
+        synthetic_users=3,
         external_network="Localhost only",
         components={
             "client": TwinComponent(

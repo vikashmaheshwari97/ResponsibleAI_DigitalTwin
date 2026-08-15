@@ -1,0 +1,30 @@
+{
+  "package": "ResponsibleAI_DigitalTwin_Documentation_Consolidation",
+  "version": "0.6.2-docs-consistency",
+  "base_repository_version": "0.6.1-professional-ui-v2",
+  "database_schema": "005_twin_snapshots",
+  "database_migration_added": false,
+  "ut_deployment_included": false,
+  "changes": [
+    "Consolidated important historical/checklist/UI/hardening documentation into README.md",
+    "Corrected Digital Twin synthetic_users metadata from 50 to 3 to match actual sandbox fixtures",
+    "Added test ensuring Twin synthetic user count matches SecureMessenger fixture",
+    "Added PowerShell cleanup helper for redundant Markdown files"
+  ],
+  "markdown_remove_after_consolidation": [
+    "BUILD_VALIDATION.md",
+    "UPGRADE_NOTES_LOCAL_FEATURE_COMPLETE.md",
+    "UPGRADE_NOTES_PHASES_1_10_UI.md",
+    "UPGRADE_NOTES_ROADMAP_1_4.md",
+    "UPGRADE_NOTES_UI_V2.md",
+    "docs/HARDENING_CHECKLIST.md",
+    "docs/LOCAL_RELEASE_CHECKLIST.md",
+    "docs/UI_DESIGN_SYSTEM.md"
+  ],
+  "markdown_retained": [
+    "README.md",
+    "SECURITY.md",
+    "deploy/certs/README.md",
+    "deploy/secrets/README.md"
+  ]
+}
