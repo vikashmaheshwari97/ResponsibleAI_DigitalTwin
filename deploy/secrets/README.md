@@ -1,17 +1,29 @@
-# Deployment secrets
+# Local hardening secret files
 
-The hardened Compose profile uses file-backed secrets. Create these files locally and never commit them:
+This directory is intentionally tracked only through this README. Actual secret files are ignored by Git.
 
-- `postgres_password.txt`
-- `sandbox_admin_token.txt`
-- `admin_password_hash.txt`
-- `operator_password_hash.txt`
-- `auditor_password_hash.txt`
+For the local production-style hardening smoke test, create:
 
-Generate bcrypt password hashes with:
-
-```bash
-python scripts/generate_password_hash.py
+```text
+postgres_password.txt
+sandbox_admin_token.txt
+admin_password_hash.txt
+operator_password_hash.txt
+auditor_password_hash.txt
 ```
 
-Files in this directory are ignored by Git except this README.
+Recommended helper:
+
+```bash
+python scripts/prepare_hardening_secrets.py
+```
+
+The helper generates random PostgreSQL/sandbox secrets and prompts for the three role passwords without printing them. Use `--force` only when intentionally rotating the local hardening secrets.
+
+Validate afterwards:
+
+```bash
+python scripts/validate_hardening_config.py
+```
+
+Never commit the generated files.

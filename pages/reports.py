@@ -7,13 +7,10 @@ import streamlit as st
 
 from services.database_service import database_health
 from services.report_service import (
-    audit_csv_bytes,
     build_run_report,
+    evidence_bundle_payloads,
     evidence_bundle_zip_bytes,
-    policy_csv_bytes,
-    report_json_bytes,
-    report_pdf_bytes,
-    timeline_csv_bytes,
+    evidence_manifest_bytes,
 )
 from services.repository_service import list_runs
 
@@ -157,12 +154,14 @@ with after_col:
 
 st.divider()
 st.subheader("Export Evidence")
-json_bytes = report_json_bytes(report)
-pdf_bytes = report_pdf_bytes(report)
-timeline_bytes = timeline_csv_bytes(report)
-policy_bytes = policy_csv_bytes(report)
-audit_bytes = audit_csv_bytes(report)
-bundle_bytes = evidence_bundle_zip_bytes(report)
+payloads = evidence_bundle_payloads(report)
+json_bytes = payloads["evidence.json"]
+pdf_bytes = payloads["report.pdf"]
+timeline_bytes = payloads["timeline.csv"]
+policy_bytes = payloads["policy_rules.csv"]
+audit_bytes = payloads["audit.csv"]
+manifest_bytes = evidence_manifest_bytes(report, payloads)
+bundle_bytes = evidence_bundle_zip_bytes(report, payloads)
 
 c1, c2, c3 = st.columns(3)
 with c1:
@@ -205,12 +204,24 @@ with c3:
         use_container_width=True,
     )
     st.download_button(
+        "Download SHA-256 Manifest",
+        data=manifest_bytes,
+        file_name=f"{selected_run_id}_manifest.json",
+        mime="application/json",
+        use_container_width=True,
+    )
+    st.download_button(
         "Download Audit CSV",
         data=audit_bytes,
         file_name=f"{selected_run_id}_audit.csv",
         mime="text/csv",
         use_container_width=True,
     )
+
+st.caption(
+    "The complete ZIP bundle now includes manifest.json with SHA-256 checksums and byte sizes "
+    "for the JSON, CSV, and PDF evidence files."
+)
 
 with st.expander("Raw report JSON preview"):
     st.code(json.dumps(report, indent=2, default=str), language="json")

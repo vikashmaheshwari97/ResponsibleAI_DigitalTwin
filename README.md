@@ -8,14 +8,15 @@ A **Digital-Twin-Driven Responsible AI Platform** for controlled AI-agent valida
 
 ## What is implemented now
 
-This version completes the local-code work for Roadmap items **1–4**:
+Roadmap items **1–3 are feature-complete for the local PoC**, and Roadmap item **4 is implemented in code with an explicit local validation workflow**:
 
-1. **Multiple controlled safe scenarios**
-2. **Professional Run Analytics**
-3. **Enhanced Database-Backed Reports**
-4. **Deployment Hardening foundations**
+1. **Multiple controlled safe scenarios** — complete
+2. **Professional Run Analytics** — complete
+3. **Enhanced Database-Backed Reports** — complete, including PDF/JSON/CSV/ZIP and SHA-256 bundle manifests
+4. **Deployment Hardening** — authentication/RBAC, file-backed secrets, HTTPS reverse proxy, backup/restore, resource limits, network isolation, CI/tests, and readiness validation are implemented for local smoke testing
+5. **University of Tartu server deployment** — intentionally deferred
 
-The remaining major milestone is **University of Tartu server deployment**, which will be done later.
+The core PostgreSQL architecture remains unchanged at Alembic `005_twin_snapshots`. This release focuses on local feature completion, operational validation, and deployment readiness rather than another database redesign.
 
 ---
 
@@ -118,6 +119,7 @@ Exports:
 - audit CSV
 - PDF evidence report
 - complete ZIP evidence bundle containing JSON + CSV + PDF
+- SHA-256 `manifest.json` with byte size and checksum for every bundled evidence file
 
 ---
 
@@ -266,6 +268,7 @@ ResponsibleAI_DigitalTwin/
 │   ├── run_history.py
 │   ├── analytics.py
 │   ├── reports.py
+│   ├── readiness.py
 │   ├── compliance.py
 │   └── audit.py
 ├── sandbox/secure_messenger/
@@ -273,6 +276,11 @@ ResponsibleAI_DigitalTwin/
 │   ├── migrate_database.py
 │   ├── backup_database.py
 │   ├── restore_database.py
+│   ├── verify_backup.py
+│   ├── validate_local_release.py
+│   ├── prepare_hardening_secrets.py
+│   ├── validate_hardening_config.py
+│   ├── smoke_hardened_runtime.py
 │   ├── generate_password_hash.py
 │   ├── generate_local_tls.ps1
 │   └── generate_local_tls.sh
@@ -281,6 +289,7 @@ ResponsibleAI_DigitalTwin/
 │   ├── auth_service.py
 │   ├── config_service.py
 │   ├── report_service.py
+│   ├── readiness_service.py
 │   ├── scenario_registry_service.py
 │   └── ...
 ├── tests/
@@ -561,32 +570,77 @@ These are technical controls for the research prototype. The project does not it
 
 ---
 
-## Development Progress After This Package
+## Original Project Phase Status
 
-| Area | State |
-|---|---:|
-| Streamlit visual PoC | 100% |
-| Professional Digital Twin UI | ~95% |
-| Digital Twin data model | ~95% |
-| Real LLM agents | ~97% |
-| Agent orchestration | ~97% |
-| Docker sandbox | 100% |
-| SecureMessenger synthetic mini-app | 100% |
-| Controlled security tests | 100% for 4 approved scenarios |
-| Policy/compliance engine | ~97% |
-| PostgreSQL + audit/evidence | ~98% |
-| Run Analytics | implemented |
-| Enhanced Reports | implemented |
-| Deployment-hardening foundations | implemented in code; deployment validation still required |
-| University of Tartu server deployment | **deferred / not started** |
+The percentages below are engineering-completeness estimates for the current local PoC, not formal acceptance metrics.
+
+| Phase | Area | Current state |
+|---|---|---:|
+| 1 | Streamlit visual PoC | 100% |
+| 2 | Professional Digital Twin UI | ~97% |
+| 3 | Real Digital Twin data model | ~97% — core model frozen for this milestone |
+| 4 | Real local LLM agents | ~98% |
+| 5 | Agent orchestration | ~99% |
+| 6 | Docker sandbox | 100% |
+| 7 | Vulnerable SecureMessenger mini-app | 100% |
+| 8 | Real controlled security tests | 100% for 4 approved scenarios |
+| 9 | Compliance / policy engine | ~99% |
+| 10 | PostgreSQL + audit/evidence/analytics/reports | ~99% |
+| 11 | University of Tartu server deployment | **deferred / not started** |
+
+Roadmap items 1–3 are therefore complete for a strong local grant/demo PoC. Roadmap item 4 is now a **validation and operations** task rather than a new core-feature task.
+
+---
+
+## Local Feature-Complete Release Validation
+
+The **Release Readiness** page and command-line validators make the remaining pre-deployment work explicit.
+
+Read-only local checks:
+
+```bash
+python scripts/validate_local_release.py
+```
+
+Exercise all four real localhost HTTP contracts in vulnerable and secure profiles, restoring the sandbox afterwards:
+
+```bash
+python scripts/validate_local_release.py --exercise-sandbox
+```
+
+Create and verify a PostgreSQL evidence backup:
+
+```bash
+python scripts/backup_database.py
+python scripts/verify_backup.py
+```
+
+Prepare file-backed secrets for the production-style local smoke test:
+
+```bash
+python scripts/prepare_hardening_secrets.py
+```
+
+Generate local self-signed TLS material with the existing PowerShell or WSL helper, then validate the hardening configuration:
+
+```bash
+python scripts/validate_hardening_config.py
+```
+
+Only after these checks pass should the production-style local HTTPS profile be started:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
+python scripts/smoke_hardened_runtime.py
+```
+
+**This is still not the University of Tartu deployment.**
 
 ---
 
 ## Next Major Milestone
 
-The next major project milestone is **University of Tartu Server Deployment**, but it is intentionally postponed until the local multi-scenario, analytics, reporting and hardening package has been validated end-to-end.
-
-Before UT deployment, validate all four scenarios, RBAC, backups, exports, CI, and the local HTTPS production-style profile.
+The next major project milestone remains **University of Tartu Server Deployment**, but it is intentionally postponed. The immediate task is to run the local release validator, exercise the four scenario contracts, validate RBAC, create/verify a backup, validate the evidence bundle manifest, and complete the local HTTPS hardening smoke test.
 
 ---
 

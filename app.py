@@ -66,6 +66,7 @@ evidence_pages = [
     st.Page("pages/run_history.py", title="Run History", icon="🗃️"),
     st.Page("pages/analytics.py", title="Run Analytics", icon="📈"),
     st.Page("pages/reports.py", title="Reports", icon="📊"),
+    st.Page("pages/readiness.py", title="Release Readiness", icon="✅"),
 ]
 
 if role in {ROLE_ADMIN, ROLE_AUDITOR}:

@@ -6,8 +6,12 @@ from typing import Any
 
 from fastapi import Body, FastAPI, Header, HTTPException
 
-from database import EXPIRED_TOKENS, MESSAGES, USERS
-from models import LoginRequest, LoginResponse, SandboxConfigRequest
+try:
+    from .database import EXPIRED_TOKENS, MESSAGES, USERS
+    from .models import LoginRequest, LoginResponse, SandboxConfigRequest
+except ImportError:  # Docker runs this module as top-level ``app``.
+    from database import EXPIRED_TOKENS, MESSAGES, USERS
+    from models import LoginRequest, LoginResponse, SandboxConfigRequest
 
 
 DEFAULT_VERSION = os.getenv("APP_VERSION", "1.0")

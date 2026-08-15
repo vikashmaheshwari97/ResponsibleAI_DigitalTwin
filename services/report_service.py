@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
 import zipfile
-from datetime import datetime
+from datetime import datetime, timezone
 from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
@@ -497,13 +498,60 @@ def report_pdf_bytes(report: dict) -> bytes:
     return buffer.getvalue()
 
 
-def evidence_bundle_zip_bytes(report: dict) -> bytes:
+def _sha256_bytes(payload: bytes) -> str:
+    return hashlib.sha256(payload).hexdigest()
+
+
+def evidence_bundle_payloads(report: dict) -> dict[str, bytes]:
+    return {
+        "evidence.json": report_json_bytes(report),
+        "timeline.csv": timeline_csv_bytes(report),
+        "policy_rules.csv": policy_csv_bytes(report),
+        "audit.csv": audit_csv_bytes(report),
+        "report.pdf": report_pdf_bytes(report),
+    }
+
+
+def evidence_manifest(report: dict, payloads: dict[str, bytes] | None = None) -> dict:
+    payloads = payloads or evidence_bundle_payloads(report)
+    return {
+        "manifest_version": "1.0",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "run_id": report["run"]["run_id"],
+        "scenario_id": report["run"].get("scenario_id"),
+        "run_status": report["run"].get("status"),
+        "run_result": report["run"].get("result"),
+        "evidence_integrity": report.get("integrity", {}),
+        "files": [
+            {
+                "path": name,
+                "bytes": len(payload),
+                "sha256": _sha256_bytes(payload),
+            }
+            for name, payload in sorted(payloads.items())
+        ],
+    }
+
+
+def evidence_manifest_bytes(
+    report: dict, payloads: dict[str, bytes] | None = None
+) -> bytes:
+    payloads = payloads or evidence_bundle_payloads(report)
+    manifest = evidence_manifest(report, payloads)
+    return json.dumps(manifest, indent=2, default=str).encode("utf-8")
+
+
+def evidence_bundle_zip_bytes(
+    report: dict, payloads: dict[str, bytes] | None = None
+) -> bytes:
     buffer = io.BytesIO()
     run_id = report["run"]["run_id"]
+    payloads = payloads or evidence_bundle_payloads(report)
+    manifest = evidence_manifest(report, payloads)
+    manifest_bytes = json.dumps(manifest, indent=2, default=str).encode("utf-8")
+
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr(f"{run_id}/evidence.json", report_json_bytes(report))
-        archive.writestr(f"{run_id}/timeline.csv", timeline_csv_bytes(report))
-        archive.writestr(f"{run_id}/policy_rules.csv", policy_csv_bytes(report))
-        archive.writestr(f"{run_id}/audit.csv", audit_csv_bytes(report))
-        archive.writestr(f"{run_id}/report.pdf", report_pdf_bytes(report))
+        archive.writestr(f"{run_id}/manifest.json", manifest_bytes)
+        for name, payload in payloads.items():
+            archive.writestr(f"{run_id}/{name}", payload)
     return buffer.getvalue()

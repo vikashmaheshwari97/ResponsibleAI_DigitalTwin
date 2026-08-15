@@ -9,20 +9,66 @@ jobs:
   python-quality:
     runs-on: ubuntu-latest
     env:
+      POSTGRES_DB: rai_twin
+      POSTGRES_USER: rai_user
       POSTGRES_PASSWORD: ci_dummy
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: "5433"
       SANDBOX_ADMIN_TOKEN: ci_dummy
+      SANDBOX_BASE_URL: http://127.0.0.1:8001
+      OLLAMA_HOST: http://127.0.0.1:11434
       AUTH_ENABLED: "false"
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
+
       - name: Install dependencies
-        run: python -m pip install --upgrade pip && pip install -r requirements-dev.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
       - name: Syntax compile
         run: python -m compileall -q .
+
       - name: Focused Ruff checks
         run: ruff check . --select E9,F63,F7,F82
-      - name: Unit tests
+
+      - name: Unit and contract tests
         run: pytest -q
+
+      - name: Scan for legacy development secrets
+        shell: bash
+        run: |
+          legacy_one="rai_"'dev_password'
+          legacy_two="rai-"'poc-admin'
+          pattern="${legacy_one}|${legacy_two}"
+          if grep -RInE "$pattern" \
+            --exclude='.env' \
+            --exclude-dir='.git' \
+            --exclude-dir='.venv' \
+            --exclude-dir='__pycache__' \
+            services sandbox scripts pages alembic docker-compose.yml docker-compose.prod.yml alembic.ini .env.example; then
+            echo 'Legacy development secret value detected in tracked source/config.'
+            exit 1
+          fi
+
+      - name: Prepare CI-only hardening placeholders
+        shell: bash
+        run: |
+          mkdir -p deploy/secrets deploy/certs
+          printf 'ci-postgres-password\n' > deploy/secrets/postgres_password.txt
+          printf 'ci-sandbox-token\n' > deploy/secrets/sandbox_admin_token.txt
+          printf '$2b$12$012345678901234567890u012345678901234567890123456789012\n' > deploy/secrets/admin_password_hash.txt
+          cp deploy/secrets/admin_password_hash.txt deploy/secrets/operator_password_hash.txt
+          cp deploy/secrets/admin_password_hash.txt deploy/secrets/auditor_password_hash.txt
+          printf 'ci-cert-placeholder\n' > deploy/certs/server.crt
+          printf 'ci-key-placeholder\n' > deploy/certs/server.key
+
+      - name: Validate Docker Compose configuration
+        run: |
+          docker compose config --quiet
+          docker compose -f docker-compose.prod.yml config --quiet
