@@ -30,13 +30,13 @@ class DigitalTwin:
 
 def create_default_twin() -> dict:
     # Keep this count aligned with sandbox/secure_messenger/database.py.
-    # The current controlled PoC has three concrete synthetic identities:
-    # Alice, Bob and Charlie.
+    # The current controlled PoC has six synthetic identities:
+    # Alice, Bob, Charlie, Eve, Frank and Grace.
     twin = DigitalTwin(
         name="SecureMessenger",
         version="1.0",
         environment="Sandbox",
-        synthetic_users=3,
+        synthetic_users=6,
         external_network="Localhost only",
         components={
             "client": TwinComponent(
@@ -69,12 +69,49 @@ def create_default_twin() -> dict:
                 kind="database",
                 description="Synthetic message storage",
             ),
+            "data_export": TwinComponent(
+                component_id="data_export",
+                name="Data Export Service",
+                kind="service",
+                description="Handles bulk data export requests",
+            ),
+            "integration": TwinComponent(
+                component_id="integration",
+                name="Integration Service",
+                kind="service",
+                description="Manages third-party data sharing integrations",
+            ),
+            "legal": TwinComponent(
+                component_id="legal",
+                name="Legal Request Service",
+                kind="service",
+                description="Processes government and legal data requests",
+            ),
+            "bot_mgmt": TwinComponent(
+                component_id="bot_mgmt",
+                name="Bot Management Service",
+                kind="service",
+                description="Manages bot permissions and data access",
+            ),
+            "feature": TwinComponent(
+                component_id="feature",
+                name="Feature Service",
+                kind="service",
+                description="Implements new platform features with safety controls",
+            ),
         },
         edges=[
             ("client", "gateway"),
             ("gateway", "auth"),
             ("gateway", "message"),
             ("message", "database"),
+            ("gateway", "data_export"),
+            ("data_export", "database"),
+            ("gateway", "integration"),
+            ("gateway", "legal"),
+            ("gateway", "bot_mgmt"),
+            ("gateway", "feature"),
+            ("feature", "message"),
         ],
     )
     return twin.to_dict()

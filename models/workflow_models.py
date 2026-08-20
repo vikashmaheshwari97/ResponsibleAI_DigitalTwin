@@ -34,6 +34,11 @@ class TwinComponentName(str, Enum):
     authentication_service = "Authentication Service"
     message_api = "Message API"
     message_database = "Message Database"
+    data_export_service = "Data Export Service"
+    integration_service = "Integration Service"
+    legal_request_service = "Legal Request Service"
+    bot_management_service = "Bot Management Service"
+    feature_service = "Feature Service"
 
 
 class RunStatus(str, Enum):

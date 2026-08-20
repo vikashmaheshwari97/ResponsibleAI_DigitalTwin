@@ -11,7 +11,18 @@ def test_default_twin_contract_is_complete():
     assert twin["external_network"] == "Localhost only"
     assert twin["synthetic_users"] > 0
 
-    required_components = {"client", "gateway", "auth", "message", "database"}
+    required_components = {
+        "client",
+        "gateway",
+        "auth",
+        "message",
+        "database",
+        "data_export",
+        "integration",
+        "legal",
+        "bot_mgmt",
+        "feature",
+    }
     assert set(twin["components"]) == required_components
 
     component_names = {item["name"] for item in twin["components"].values()}

@@ -13,6 +13,11 @@ _COMPONENT_TO_TWIN_ID = {
     "Authentication Service": "auth",
     "Message API": "message",
     "Message Database": "database",
+    "Data Export Service": "data_export",
+    "Integration Service": "integration",
+    "Legal Request Service": "legal",
+    "Bot Management Service": "bot_mgmt",
+    "Feature Service": "feature",
 }
 
 
