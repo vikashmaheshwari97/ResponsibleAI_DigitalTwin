@@ -168,13 +168,32 @@ with st.container(border=True):
     )
 
 st.caption(
-    "Safety boundary · Only SCN-001–SCN-004 are executable. Targets, identities, tokens, payloads "
+    "Safety boundary · Only predefined scenarios are executable. Targets, identities, tokens, payloads "
     "and request bursts are synthetic and restricted to localhost SecureMessenger."
 )
 
 policy_preview = validate_simulation_policy(scenario.scenario_id)
-with st.expander("Governance pre-check"):
+with st.expander("Governance pre-check", expanded=True):
     render_policy_decision(policy_preview["decision"], "Pre-execution policy")
+
+    readiness = policy_preview.get("readiness", [])
+    if readiness:
+        st.markdown("**Scenario readiness**")
+        categories = sorted(set(c["category"] for c in readiness))
+        for cat in categories:
+            items = [c for c in readiness if c["category"] == cat]
+            all_passed = all(i["passed"] for i in items)
+            tone = "success" if all_passed else "danger"
+            st.markdown(status_chip_html(f"{cat} · {'PASS' if all_passed else 'FAIL'}", tone), unsafe_allow_html=True)
+            for item in items:
+                icon = "✅" if item["passed"] else "❌"
+                st.markdown(f"  {icon} **{item['name']}** — {item['evidence']}")
+        all_ready = all(c["passed"] for c in readiness)
+        if all_ready:
+            st.success("All scenario-specific readiness checks passed.")
+        else:
+            failed_count = sum(1 for c in readiness if not c["passed"])
+            st.warning(f"{failed_count} readiness check(s) failed. The scenario may not behave as expected.")
 
 if st.session_state.phase == "ready":
     section_header("Execute Validation", "Run the real HTTP contract against the vulnerable sandbox profile.")
