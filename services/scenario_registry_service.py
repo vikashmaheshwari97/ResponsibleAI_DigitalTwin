@@ -216,6 +216,248 @@ SCENARIOS: dict[str, ScenarioDefinition] = {
         expected_status=429,
         test_kind="rate_limit",
     ),
+    "SCN-005": ScenarioDefinition(
+        scenario_id="SCN-005",
+        name="Bulk User-Data Exfiltration",
+        category="Data Protection",
+        objective=(
+            "Request an unlimited bulk export of all synthetic messages. "
+            "Correct behavior is HTTP 429 when the bulk threshold is exceeded."
+        ),
+        description=(
+            "Controlled bulk data exfiltration test. A compromised service "
+            "attempts to retrieve all messages from the synthetic messaging "
+            "platform in a single operation."
+        ),
+        affected_component=TwinComponentName.data_export_service,
+        classification="Unrestricted Bulk Data Access",
+        severity=Severity.critical,
+        confidence="high",
+        root_cause=(
+            "The vulnerable Data Export Service does not enforce per-user bulk "
+            "export limits, allowing unlimited retrieval of all synthetic messages."
+        ),
+        security_impact=(
+            "A compromised or malicious service can exfiltrate the entire "
+            "synthetic message store in a single request."
+        ),
+        recommended_action=(
+            "Enforce a per-user bulk export threshold and return HTTP 429 "
+            "when the limit is exceeded."
+        ),
+        remediation_title="Enforce bulk data export limits",
+        remediation_action_type="Data access control",
+        remediation_change=(
+            "Apply a per-user counter on the bulk export endpoint and reject "
+            "requests exceeding the predefined threshold with HTTP 429."
+        ),
+        remediation_benefit="Bulk data exfiltration attempts are throttled deterministically.",
+        remediation_side_effects=(
+            "Export requests exceeding the threshold receive HTTP 429.",
+            "Legitimate bulk operations must be batched below the threshold.",
+        ),
+        verification_test=(
+            "Repeat bulk export requests and verify the final response is HTTP 429."
+        ),
+        expected_status=429,
+        test_kind="bulk_exfiltration",
+    ),
+    "SCN-006": ScenarioDefinition(
+        scenario_id="SCN-006",
+        name="Unauthorized Third-Party Data Sharing",
+        category="Privacy",
+        objective=(
+            "Share synthetic user data with an unauthorized external marketing "
+            "service. Correct behavior is HTTP 403."
+        ),
+        description=(
+            "Controlled third-party data sharing test. The messaging platform "
+            "attempts to send synthetic user data to an external service that "
+            "has not been authorized for data access."
+        ),
+        affected_component=TwinComponentName.integration_service,
+        classification="Unauthorized Data Sharing",
+        severity=Severity.critical,
+        confidence="high",
+        root_cause=(
+            "The vulnerable Integration Service does not verify whether a "
+            "third-party recipient is authorized before sharing synthetic "
+            "user data."
+        ),
+        security_impact=(
+            "Synthetic user data can be shared with unauthorized external "
+            "services without any access control check."
+        ),
+        recommended_action=(
+            "Verify third-party authorization status before sharing any "
+            "synthetic user data."
+        ),
+        remediation_title="Enforce third-party authorization check",
+        remediation_action_type="Data sharing control",
+        remediation_change=(
+            "Check the integration's authorized status before sharing data "
+            "and return HTTP 403 for unauthorized third-party recipients."
+        ),
+        remediation_benefit="Unauthorized third-party data sharing is blocked.",
+        remediation_side_effects=(
+            "Sharing requests to unauthorized integrations receive HTTP 403.",
+            "New integrations must be explicitly authorized before data access.",
+        ),
+        verification_test=(
+            "Repeat the share request to the unauthorized integration and "
+            "require HTTP 403."
+        ),
+        expected_status=403,
+        test_kind="unauthorized_sharing",
+    ),
+    "SCN-007": ScenarioDefinition(
+        scenario_id="SCN-007",
+        name="Government Data Request",
+        category="Governance",
+        objective=(
+            "Submit a government data request without a valid legal basis. "
+            "Correct behavior is HTTP 403."
+        ),
+        description=(
+            "Controlled government data request scenario. A government entity "
+            "requests access to synthetic user data, but the request lacks "
+            "a valid legal basis or court order."
+        ),
+        affected_component=TwinComponentName.legal_request_service,
+        classification="Government Request Without Legal Basis",
+        severity=Severity.critical,
+        confidence="high",
+        root_cause=(
+            "The vulnerable Legal Request Service discloses synthetic user "
+            "data in response to government requests without verifying the "
+            "presence of a valid legal basis or court order."
+        ),
+        security_impact=(
+            "Synthetic user data can be disclosed to government entities "
+            "without proper legal authorization."
+        ),
+        recommended_action=(
+            "Verify the request has a valid legal basis before disclosing "
+            "any synthetic user data."
+        ),
+        remediation_title="Enforce legal basis verification",
+        remediation_action_type="Legal compliance",
+        remediation_change=(
+            "Require a valid legal basis (court order or equivalent) before "
+            "processing a government data request and return HTTP 403 otherwise."
+        ),
+        remediation_benefit="Government requests without legal basis are rejected.",
+        remediation_side_effects=(
+            "Requests lacking legal basis receive HTTP 403.",
+            "Government request workflows must include legal basis documentation.",
+        ),
+        verification_test=(
+            "Repeat the government request without a legal basis and require "
+            "HTTP 403."
+        ),
+        expected_status=403,
+        test_kind="government_request",
+    ),
+    "SCN-008": ScenarioDefinition(
+        scenario_id="SCN-008",
+        name="Malicious Misbehaving Bot",
+        category="Bot Security",
+        objective=(
+            "Request user message history from a bot that is only authorized "
+            "for weather data. Correct behavior is HTTP 403."
+        ),
+        description=(
+            "Controlled bot permission abuse scenario. An analytics bot "
+            "declared for aggregate statistics attempts to access private "
+            "user message history, exceeding its declared permission scope."
+        ),
+        affected_component=TwinComponentName.bot_management_service,
+        classification="Excessive Bot Permissions",
+        severity=Severity.high,
+        confidence="high",
+        root_cause=(
+            "The vulnerable Bot Management Service does not enforce the "
+            "bot's declared permission scope, allowing it to access data "
+            "beyond its authorized purpose."
+        ),
+        security_impact=(
+            "A bot with a declared purpose of aggregate statistics can "
+            "access private user message history and user profiles."
+        ),
+        recommended_action=(
+            "Enforce declared bot permission scope and reject data access "
+            "requests that exceed the bot's authorized permissions."
+        ),
+        remediation_title="Enforce bot permission scope",
+        remediation_action_type="Access control",
+        remediation_change=(
+            "Check the bot's declared permissions against the requested "
+            "data type and return HTTP 403 when the request exceeds the "
+            "bot's authorized scope."
+        ),
+        remediation_benefit="Bots are restricted to their declared permission scope.",
+        remediation_side_effects=(
+            "Bots exceeding their declared scope receive HTTP 403.",
+            "Bot permission changes require explicit registration updates.",
+        ),
+        verification_test=(
+            "Repeat the bot data access request for message history and "
+            "require HTTP 403."
+        ),
+        expected_status=403,
+        test_kind="malicious_bot",
+    ),
+    "SCN-009": ScenarioDefinition(
+        scenario_id="SCN-009",
+        name="New Feature Safety Testing",
+        category="Safety Testing",
+        objective=(
+            "Use the AI summarization feature to access private messages "
+            "beyond its declared scope. Correct behavior is HTTP 403."
+        ),
+        description=(
+            "Controlled new-feature safety test. Before deploying an "
+            "AI-powered message summarization feature, the Digital Twin "
+            "verifies that the feature cannot access private messages "
+            "beyond its declared public-group scope."
+        ),
+        affected_component=TwinComponentName.feature_service,
+        classification="Feature Scope Violation",
+        severity=Severity.high,
+        confidence="high",
+        root_cause=(
+            "The vulnerable Feature Service does not enforce the feature's "
+            "declared data scope, allowing the AI summarization feature to "
+            "access private user messages."
+        ),
+        security_impact=(
+            "A feature declared for public group message summarization can "
+            "access private user messages and expose them to an external "
+            "AI model."
+        ),
+        recommended_action=(
+            "Enforce the feature's declared data scope and reject access "
+            "to data outside the declared boundary."
+        ),
+        remediation_title="Enforce feature data scope boundary",
+        remediation_action_type="Feature safety control",
+        remediation_change=(
+            "Verify the feature's declared scope before processing data "
+            "requests and return HTTP 403 when the feature attempts to "
+            "access data beyond its declared boundary."
+        ),
+        remediation_benefit="Features are restricted to their declared data scope.",
+        remediation_side_effects=(
+            "Feature requests exceeding the declared scope receive HTTP 403.",
+            "New features must declare and register their data scope.",
+        ),
+        verification_test=(
+            "Repeat the summarization request targeting private messages "
+            "and require HTTP 403."
+        ),
+        expected_status=403,
+        test_kind="feature_safety",
+    ),
 }
 
 

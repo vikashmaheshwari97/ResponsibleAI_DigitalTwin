@@ -185,11 +185,179 @@ def _run_rate_limit() -> dict:
     )
 
 
+def _run_bulk_exfiltration() -> dict:
+    scenario = get_scenario("SCN-005")
+    login_result = login("eve")
+    token = login_result["access_token"]
+    attempts: list[dict] = []
+    last_status = 0
+
+    for attempt in range(1, 15):
+        response = requests.get(
+            f"{SANDBOX_BASE_URL}/export/messages?limit=1000000",
+            headers=_authorized_headers(token),
+            timeout=REQUEST_TIMEOUT,
+        )
+        body = _safe_body(response)
+        last_status = response.status_code
+        attempts.append(
+            {
+                "attempt": attempt,
+                "status_code": response.status_code,
+                "body": body,
+            }
+        )
+
+    vulnerability = last_status != scenario.expected_status
+    return _standard_result(
+        scenario_id=scenario.scenario_id,
+        requesting_user="eve",
+        resource_id="GET /export/messages × 14",
+        expected_status=scenario.expected_status,
+        observed_status=last_status,
+        access_granted=last_status not in (429, 403),
+        vulnerability_detected=vulnerability,
+        response={"attempts": attempts, "final_status": last_status},
+        request_summary=(
+            "Attempt fourteen bulk export requests with limit=1000000 to "
+            "exfiltrate all synthetic messages."
+        ),
+    )
+
+
+def _run_unauthorized_sharing() -> dict:
+    scenario = get_scenario("SCN-006")
+    login_result = login("alice")
+    token = login_result["access_token"]
+    response = requests.post(
+        f"{SANDBOX_BASE_URL}/share",
+        headers=_authorized_headers(token),
+        json={
+            "integration_id": "external-marketing",
+            "data_type": "user_messages",
+        },
+        timeout=REQUEST_TIMEOUT,
+    )
+    body = _safe_body(response)
+    vulnerability = response.status_code != scenario.expected_status
+    return _standard_result(
+        scenario_id=scenario.scenario_id,
+        requesting_user="alice",
+        resource_id="POST /share → external-marketing",
+        expected_status=scenario.expected_status,
+        observed_status=response.status_code,
+        access_granted=200 <= response.status_code < 300,
+        vulnerability_detected=vulnerability,
+        response=body,
+        request_summary=(
+            "Share synthetic user data with the unauthorized external marketing "
+            "integration."
+        ),
+    )
+
+
+def _run_government_request() -> dict:
+    scenario = get_scenario("SCN-007")
+    login_result = login("alice")
+    token = login_result["access_token"]
+    response = requests.post(
+        f"{SANDBOX_BASE_URL}/legal/request",
+        headers=_authorized_headers(token),
+        json={
+            "request_id": "GOV-REQ-001",
+            "entity": "National Security Agency",
+            "request_type": "user_data_access",
+            "scope": "all_user_messages",
+            "legal_basis": None,
+        },
+        timeout=REQUEST_TIMEOUT,
+    )
+    body = _safe_body(response)
+    vulnerability = response.status_code != scenario.expected_status
+    return _standard_result(
+        scenario_id=scenario.scenario_id,
+        requesting_user="alice",
+        resource_id="POST /legal/request → GOV-REQ-001",
+        expected_status=scenario.expected_status,
+        observed_status=response.status_code,
+        access_granted=200 <= response.status_code < 300,
+        vulnerability_detected=vulnerability,
+        response=body,
+        request_summary=(
+            "Submit a government data request without a valid legal basis."
+        ),
+    )
+
+
+def _run_malicious_bot() -> dict:
+    scenario = get_scenario("SCN-008")
+    login_result = login("alice")
+    token = login_result["access_token"]
+    response = requests.get(
+        f"{SANDBOX_BASE_URL}/bot/analytics-bot/data?data_type=message_history",
+        headers=_authorized_headers(token),
+        timeout=REQUEST_TIMEOUT,
+    )
+    body = _safe_body(response)
+    vulnerability = response.status_code != scenario.expected_status
+    return _standard_result(
+        scenario_id=scenario.scenario_id,
+        requesting_user="alice",
+        resource_id="GET /bot/analytics-bot/data?data_type=message_history",
+        expected_status=scenario.expected_status,
+        observed_status=response.status_code,
+        access_granted=200 <= response.status_code < 300,
+        vulnerability_detected=vulnerability,
+        response=body,
+        request_summary=(
+            "Request message history from an analytics bot that is only "
+            "authorized for aggregate statistics."
+        ),
+    )
+
+
+def _run_feature_safety() -> dict:
+    scenario = get_scenario("SCN-009")
+    login_result = login("alice")
+    token = login_result["access_token"]
+    response = requests.post(
+        f"{SANDBOX_BASE_URL}/feature/summarize",
+        headers=_authorized_headers(token),
+        json={
+            "feature_id": "ai_summarization",
+            "message_ids": ["MSG-204", "MSG-305"],
+            "include_private": True,
+        },
+        timeout=REQUEST_TIMEOUT,
+    )
+    body = _safe_body(response)
+    vulnerability = response.status_code != scenario.expected_status
+    return _standard_result(
+        scenario_id=scenario.scenario_id,
+        requesting_user="alice",
+        resource_id="POST /feature/summarize",
+        expected_status=scenario.expected_status,
+        observed_status=response.status_code,
+        access_granted=200 <= response.status_code < 300,
+        vulnerability_detected=vulnerability,
+        response=body,
+        request_summary=(
+            "Use the AI summarization feature to access private messages "
+            "beyond its declared public-group scope."
+        ),
+    )
+
+
 _RUNNERS = {
     "bola": _run_bola,
     "expired_token": _run_expired_token,
     "malformed_payload": _run_malformed_payload,
     "rate_limit": _run_rate_limit,
+    "bulk_exfiltration": _run_bulk_exfiltration,
+    "unauthorized_sharing": _run_unauthorized_sharing,
+    "government_request": _run_government_request,
+    "malicious_bot": _run_malicious_bot,
+    "feature_safety": _run_feature_safety,
 }
 
 
