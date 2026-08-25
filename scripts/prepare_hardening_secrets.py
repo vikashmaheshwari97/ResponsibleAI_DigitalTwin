@@ -64,6 +64,7 @@ def main() -> None:
     admin_password = _prompt_password("Admin")
     operator_password = _prompt_password("Operator")
     auditor_password = _prompt_password("Auditor")
+    partner_password = _prompt_password("Partner")
 
     values = {
         "postgres_password.txt": secrets.token_urlsafe(36),
@@ -71,6 +72,7 @@ def main() -> None:
         "admin_password_hash.txt": _bcrypt_hash(admin_password),
         "operator_password_hash.txt": _bcrypt_hash(operator_password),
         "auditor_password_hash.txt": _bcrypt_hash(auditor_password),
+        "partner_password_hash.txt": _bcrypt_hash(partner_password),
     }
 
     created = []
@@ -80,7 +82,6 @@ def main() -> None:
             _write_secret(path, value, force=args.force)
             created.append(path)
     except Exception:
-        # Do not leave a partially-created set on a first-time failure.
         if not args.force:
             for path in created:
                 try:

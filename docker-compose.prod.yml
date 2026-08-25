@@ -37,12 +37,15 @@ services:
       RAI_OPERATOR_PASSWORD_HASH_FILE: /run/secrets/operator_password_hash
       RAI_AUDITOR_USERNAME: "${RAI_AUDITOR_USERNAME:-auditor}"
       RAI_AUDITOR_PASSWORD_HASH_FILE: /run/secrets/auditor_password_hash
+      RAI_PARTNER_USERNAME: "${RAI_PARTNER_USERNAME:-partner}"
+      RAI_PARTNER_PASSWORD_HASH_FILE: /run/secrets/partner_password_hash
     secrets:
       - postgres_password
       - sandbox_admin_token
       - admin_password_hash
       - operator_password_hash
       - auditor_password_hash
+      - partner_password_hash
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -123,3 +126,5 @@ secrets:
     file: ./deploy/secrets/operator_password_hash.txt
   auditor_password_hash:
     file: ./deploy/secrets/auditor_password_hash.txt
+  partner_password_hash:
+    file: ./deploy/secrets/partner_password_hash.txt

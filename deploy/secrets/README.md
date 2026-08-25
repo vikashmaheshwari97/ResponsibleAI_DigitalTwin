@@ -10,6 +10,7 @@ sandbox_admin_token.txt
 admin_password_hash.txt
 operator_password_hash.txt
 auditor_password_hash.txt
+partner_password_hash.txt
 ```
 
 Recommended helper:
@@ -18,7 +19,7 @@ Recommended helper:
 python scripts/prepare_hardening_secrets.py
 ```
 
-The helper generates random PostgreSQL/sandbox secrets and prompts for the three role passwords without printing them. Use `--force` only when intentionally rotating the local hardening secrets.
+The helper generates random PostgreSQL/sandbox secrets and prompts for the four role passwords without printing them. The Partner account is read-only and is intended for external research/project review. Use `--force` only when intentionally rotating the local hardening secrets.
 
 Validate afterwards:
 

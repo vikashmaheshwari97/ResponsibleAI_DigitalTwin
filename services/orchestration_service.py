@@ -19,10 +19,11 @@ from services.run_service import (
     complete_clean_run,
     fail_run,
     get_current_run,
+    mark_verifying,
     start_run,
 )
 from services.scenario_registry_service import get_scenario
-from services.twin_service import mark_validated, set_running
+from services.twin_service import mark_validated, mark_verifying_state, set_running
 
 
 ProgressCallback = Callable[[str], None]
@@ -66,12 +67,15 @@ def start_security_validation(progress: ProgressCallback | None = None) -> dict:
 
         _progress(progress, "🧠 Scenario Planner")
         execute_planner()
+        _snapshot("planning_complete")
 
         _progress(progress, "🛡️ Security Testing Agent — real local HTTP test")
         test = execute_security_tester()
+        _snapshot("security_test_complete")
 
         _progress(progress, "👁️ Observer Agent")
         detected = execute_observer()
+        _snapshot("observation_complete")
 
         if not detected:
             _progress(progress, "✅ Secure behavior already present — no remediation required")
@@ -126,6 +130,12 @@ def approve_and_verify(progress: ProgressCallback | None = None) -> dict:
         _snapshot("human_approved")
 
         _progress(progress, "🔧 Applying approved sandbox remediation")
+        # Capture a real O4 checkpoint before the verification agent applies the
+        # secure profile. execute_verification() calls mark_verifying() again,
+        # which is intentionally idempotent for the current lifecycle state.
+        mark_verifying()
+        mark_verifying_state()
+        _snapshot("verification_started")
         verification = execute_verification()
 
         _progress(progress, "⚖️ Evaluating verification policy")
