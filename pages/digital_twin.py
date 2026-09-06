@@ -6,9 +6,19 @@ import pandas as pd
 import streamlit as st
 
 from components.twin_3d import render_live_twin_3d, render_twin_replay
+from services.agent_identity_service import (
+    PROTOTYPE_IDENTITY_NOTE,
+    list_agent_identities,
+)
 from services.database_service import database_health
 from services.repository_service import list_runs
 from services.sandbox_service import get_sandbox_health
+from services.sustainability_service import (
+    codecarbon_configuration,
+    measurements_by_agent,
+    persisted_sustainability_summary,
+    session_sustainability_summary,
+)
 from services.twin_replay_service import (
     build_demo_replay,
     build_live_frame,
@@ -24,7 +34,6 @@ def _esc(value: object) -> str:
 
 
 def _render_html(markup: str) -> None:
-    """Render app-owned HTML without Markdown interpreting indentation as code."""
     markup = markup.strip()
     if hasattr(st, "html"):
         st.html(markup)
@@ -57,7 +66,7 @@ def _render_command_strip(*, twin: dict, phase: str, sandbox: dict, database: di
           <div class="rai-twin-command-card">
             <div class="rai-twin-command-kicker">Evidence</div>
             <div class="rai-twin-command-value">{db_state}</div>
-            <div class="rai-twin-command-detail">PostgreSQL-backed Twin snapshots and replay</div>
+            <div class="rai-twin-command-detail">PostgreSQL-backed Twin snapshots, audit and replay</div>
           </div>
         </div>
         """
@@ -77,7 +86,7 @@ def _render_operation_cards() -> None:
             f'<div class="rai-operation-id">{_esc(op_id)}</div>'
             f'<div class="rai-operation-name">{_esc(name)}</div>'
             f'<div class="rai-operation-detail">{_esc(detail)}</div>'
-            '</div>'
+            "</div>"
         )
         for op_id, name, detail, css_class in items
     )
@@ -96,13 +105,99 @@ def _render_interaction_hints() -> None:
     )
 
 
+def _render_codecarbon_summary(summary: dict, *, title: str) -> None:
+    section_header(
+        title,
+        "Measured locally with CodeCarbon. Values reflect the configured hardware tracking mode "
+        "during the governed agent execution windows.",
+    )
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric(
+        "Energy",
+        f"{summary['energy_kwh']:.6f} kWh"
+        if summary.get("measured_stages")
+        else "—",
+    )
+    c2.metric(
+        "CO₂e",
+        f"{summary['emissions_g']:.4f} g"
+        if summary.get("measured_stages")
+        else "—",
+    )
+    c3.metric("Measured Stages", summary.get("measured_stages", 0))
+    c4.metric(
+        "Compute Window",
+        f"{summary.get('duration_s', 0.0):.2f} s"
+        if summary.get("measured_stages")
+        else "—",
+    )
+    if summary.get("measured_stages"):
+        st.caption(
+            f"CodeCarbon OfflineEmissionsTracker · {summary.get('country_iso_code')} · "
+            f"{summary.get('tracking_mode')} tracking."
+        )
+    else:
+        st.info("No CodeCarbon measurements are available for this run yet.")
+
+
+def _render_agent_registry() -> None:
+    registry = list_agent_identities(st.session_state.agent_status)
+    telemetry_by_agent = measurements_by_agent()
+
+    section_header(
+        "AI Agents in this Simulation",
+        "Stable prototype e-Identity IDs identify the six operational agents. Sustainability values "
+        "are measured by CodeCarbon during each agent stage rather than hardcoded.",
+    )
+
+    cols = st.columns(3, gap="medium")
+    for index, item in enumerate(registry):
+        telemetry = telemetry_by_agent.get(item["name"], {})
+        measured = telemetry.get("measured_stages", 0) > 0
+        with cols[index % 3]:
+            with st.container(border=True):
+                st.markdown(f"**{item['name']}**")
+                st.caption(f"{item['operation']} · {item['role']}")
+                st.markdown(f"`{item['e_identity_id']}`")
+                st.markdown(
+                    status_chip_html(
+                        item["status"],
+                        "success"
+                        if item["status"] in {"Ready", "Completed", "Applied"}
+                        else "warning",
+                    ),
+                    unsafe_allow_html=True,
+                )
+                e1, e2 = st.columns(2)
+                e1.metric(
+                    "Energy",
+                    f"{telemetry.get('energy_kwh', 0.0):.6f} kWh"
+                    if measured
+                    else "—",
+                )
+                e2.metric(
+                    "CO₂e",
+                    f"{telemetry.get('emissions_g', 0.0):.4f} g"
+                    if measured
+                    else "—",
+                )
+                st.caption(
+                    f"CodeCarbon stages: {telemetry.get('measured_stages', 0)}"
+                    if measured
+                    else "CodeCarbon measurement pending"
+                )
+
+    st.caption(PROTOTYPE_IDENTITY_NOTE)
+
+
 page_header(
     "Interactive Digital Twin Control Plane",
     "Explore SecureMessenger as a live 3D system, follow the governed O1–O4 validation lifecycle, "
-    "and replay evidence-backed historical simulations without re-running the sandbox.",
+    "inspect traceable AI-agent identities, measure sustainability with CodeCarbon, and replay "
+    "evidence-backed historical simulations.",
     icon="🔷",
     eyebrow="Control Plane · Digital Twin",
-    badge="Interactive 3D · O1–O4 lifecycle · Evidence replay",
+    badge="Interactive 3D · Agent e-Identity · CodeCarbon · Evidence replay",
     badge_tone="info",
 )
 
@@ -112,6 +207,7 @@ twin = st.session_state.twin
 phase = st.session_state.phase
 scenario_id = st.session_state.get("selected_scenario_id")
 database = database_health()
+codecarbon = codecarbon_configuration()
 
 _render_command_strip(twin=twin, phase=phase, sandbox=sandbox, database=database)
 
@@ -122,6 +218,12 @@ c3.metric("Environment", twin["environment"])
 c4.metric("Synthetic Users", twin["synthetic_users"])
 c5.metric("Lifecycle", phase.replace("_", " ").title())
 
+if not codecarbon["available"]:
+    st.warning(
+        "CodeCarbon is not currently importable. Install the updated requirements.txt to enable "
+        "measured sustainability telemetry."
+    )
+
 live_tab, replay_tab, fallback_tab = st.tabs(
     ["◈ Live 3D Twin", "▶ Evidence Replay", "◇ 2D Fallback & Inventory"]
 )
@@ -129,7 +231,8 @@ live_tab, replay_tab, fallback_tab = st.tabs(
 with live_tab:
     section_header(
         "Live 3D Digital Twin",
-        "A presentation-grade interactive system view driven by the same governed state used by the simulation and evidence pipeline.",
+        "A presentation-grade interactive system view driven by the same governed state used by "
+        "the simulation and evidence pipeline.",
     )
 
     live_frame = build_live_frame(
@@ -144,9 +247,16 @@ with live_tab:
     render_live_twin_3d(live_frame, height=800)
     _render_interaction_hints()
 
+    _render_agent_registry()
+    _render_codecarbon_summary(
+        session_sustainability_summary(),
+        title="Measured Sustainability Telemetry",
+    )
+
     section_header(
         "Four-Operation Model",
-        "A reviewer-friendly abstraction over the underlying agent workflow. The live scene highlights the active operation automatically.",
+        "A reviewer-friendly abstraction over the underlying agent workflow. "
+        "The live scene highlights the active operation automatically.",
     )
     _render_operation_cards()
 
@@ -181,19 +291,22 @@ with live_tab:
                 ("External targets prohibited", "success"),
                 ("Human approval retained", "success"),
                 ("Twin snapshots persisted", "success" if database.get("connected") else "warning"),
+                ("CodeCarbon enabled", "success" if codecarbon["enabled"] and codecarbon["available"] else "warning"),
             ]:
                 st.markdown(status_chip_html(f"✓ {label}", tone), unsafe_allow_html=True)
                 st.markdown("<div style='height:.34rem'></div>", unsafe_allow_html=True)
 
-    st.success(
-        "Live mode preserves human oversight: O3 pauses for explicit approval in the Security Scenario Lab. "
-        "The 3D scene reflects controlled state transitions; it does not invent or bypass them."
+    st.caption(
+        "CodeCarbon machine tracking estimates the local machine's energy during each agent stage. "
+        "Concurrent local activity can influence the result; switch CODECARBON_TRACKING_MODE=process "
+        "for stricter Python-process attribution."
     )
 
 with replay_tab:
     section_header(
         "Historical Digital Twin Replay",
-        "Replay recorded Twin states without executing SecureMessenger again. Use 1× for inspection or 3×/5× for compact partner and grant-review demonstrations.",
+        "Replay recorded Twin states without executing SecureMessenger again. Persisted CodeCarbon "
+        "measurements are recovered from the existing audit evidence for historical runs.",
     )
 
     persisted_runs = []
@@ -211,13 +324,12 @@ with replay_tab:
         "Replay source",
         source_options,
         horizontal=True,
-        help=(
-            "Persisted runs replay actual Digital Twin snapshots. The built-in demonstration is a "
-            "portable fallback when the evidence database is unavailable."
-        ),
     )
 
     bundle = None
+    replay_sustainability = None
+    selected_run_id = None
+
     if source == "Persisted PostgreSQL run":
         terminal_first = sorted(
             persisted_runs,
@@ -237,6 +349,8 @@ with replay_tab:
         )
         try:
             bundle = build_persisted_replay(selected_run_id)
+            replay_sustainability = persisted_sustainability_summary(selected_run_id)
+            bundle["sustainability"] = replay_sustainability
         except Exception as exc:
             st.warning(f"This run cannot be replayed yet: {exc}")
     else:
@@ -252,10 +366,16 @@ with replay_tab:
 
         render_twin_replay(bundle, height=820)
 
-        st.caption(
-            "Playback timing is presentation-normalised: long human/LLM idle periods are compressed, "
-            "while every frame retains its original evidence timestamp and snapshot hash when available."
-        )
+        if source == "Persisted PostgreSQL run" and replay_sustainability:
+            _render_codecarbon_summary(
+                replay_sustainability,
+                title="Historical CodeCarbon Telemetry",
+            )
+        else:
+            st.info(
+                "The built-in demonstration is a visual replay template and has no fabricated "
+                "CodeCarbon sustainability measurement."
+            )
 
         st.download_button(
             "Download replay evidence bundle (.json)",
@@ -265,31 +385,32 @@ with replay_tab:
             use_container_width=True,
         )
     elif source == "Persisted PostgreSQL run":
-        st.info(
-            "No Twin snapshots are stored for the selected historical run. New governed runs created "
-            "after the replay upgrade capture additional O1–O4 checkpoints automatically."
-        )
+        st.info("No Twin snapshots are stored for the selected historical run.")
 
-    with st.expander("What is actually being recorded?", expanded=False):
+    with st.expander("What is actually measured?", expanded=False):
         st.markdown(
             """
-The replay is intentionally **not a screen-recorded video**. It reconstructs the simulation from
-PostgreSQL evidence:
+CodeCarbon runs around each operational AI-agent stage:
 
-- Digital Twin snapshots and component status at governed checkpoints;
-- agent activity that occurred between snapshots;
-- initial and verification HTTP evidence;
-- snapshot timestamps and integrity hashes.
+- Scenario Planner;
+- Security Testing Agent;
+- Observer Agent;
+- Security Analyst;
+- Remediation Agent; and
+- Verification Agent.
 
-This keeps the demonstration interactive: reviewers can rotate the Twin, inspect components and scrub
-the timeline while no live security simulation is running.
+For each stage, the platform records duration, total energy, CO₂e, CPU/GPU/RAM energy when
+available, country, tracking mode and CodeCarbon version. The measurement JSON is also written
+into the existing auditable evidence stream, so historical runs can recover the telemetry
+without adding a new PostgreSQL migration.
 """
         )
 
 with fallback_tab:
     section_header(
         "2D Topology Fallback",
-        "The original Mermaid topology remains available as a lightweight representation of the same governed Twin state.",
+        "The original Mermaid topology remains available as a lightweight representation of "
+        "the same governed Twin state.",
     )
     with st.container(border=True):
         render_digital_twin()
@@ -331,5 +452,5 @@ with fallback_tab:
 
 st.caption(
     "Live 3D, replay, Mermaid fallback and persisted evidence all originate from the same Digital Twin "
-    "state contract. The visualization is not an independent source of truth."
+    "state contract. Sustainability values are measured with CodeCarbon rather than hardcoded."
 )

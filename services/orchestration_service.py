@@ -23,6 +23,7 @@ from services.run_service import (
     start_run,
 )
 from services.scenario_registry_service import get_scenario
+from services.sustainability_service import measure_agent_activity
 from services.twin_service import mark_validated, mark_verifying_state, set_running
 
 
@@ -65,16 +66,28 @@ def start_security_validation(progress: ProgressCallback | None = None) -> dict:
         set_running()
         _snapshot("run_started")
 
-        _progress(progress, "🧠 Scenario Planner")
-        execute_planner()
+        _progress(progress, "🧠 Scenario Planner · CodeCarbon tracking")
+        measure_agent_activity(
+            "Scenario Planner",
+            "O1 · Plan",
+            execute_planner,
+        )
         _snapshot("planning_complete")
 
-        _progress(progress, "🛡️ Security Testing Agent — real local HTTP test")
-        test = execute_security_tester()
+        _progress(progress, "🛡️ Security Testing Agent · CodeCarbon tracking")
+        test = measure_agent_activity(
+            "Security Testing Agent",
+            "O2 · Detect",
+            execute_security_tester,
+        )
         _snapshot("security_test_complete")
 
-        _progress(progress, "👁️ Observer Agent")
-        detected = execute_observer()
+        _progress(progress, "👁️ Observer Agent · CodeCarbon tracking")
+        detected = measure_agent_activity(
+            "Observer Agent",
+            "O2 · Detect",
+            execute_observer,
+        )
         _snapshot("observation_complete")
 
         if not detected:
@@ -90,10 +103,14 @@ def start_security_validation(progress: ProgressCallback | None = None) -> dict:
                 "analysis": None,
             }
 
-        _progress(progress, "🔍 Security Analyst — local structured LLM analysis")
-        analysis = execute_analyst()
+        _progress(progress, "🔍 Security Analyst · local LLM + CodeCarbon tracking")
+        analysis = measure_agent_activity(
+            "Security Analyst",
+            "O2 · Detect",
+            execute_analyst,
+        )
         _snapshot("post_analysis")
-        _progress(progress, "✓ Structured security analysis persisted")
+        _progress(progress, "✓ Structured security analysis and sustainability telemetry persisted")
 
         return {
             "run": run,
@@ -112,10 +129,14 @@ def start_security_validation(progress: ProgressCallback | None = None) -> dict:
 
 def prepare_remediation(progress: ProgressCallback | None = None) -> dict:
     try:
-        _progress(progress, "🔧 Remediation Agent — generating structured proposal")
-        remediation = execute_remediation_agent()
+        _progress(progress, "🔧 Remediation Agent · CodeCarbon tracking")
+        remediation = measure_agent_activity(
+            "Remediation Agent",
+            "O3 · Remediate",
+            execute_remediation_agent,
+        )
         _snapshot("remediation_proposed")
-        _progress(progress, "✓ Remediation proposal persisted")
+        _progress(progress, "✓ Remediation proposal and sustainability telemetry persisted")
         return {"remediation": remediation}
     except Exception as exc:
         st.session_state.orchestration_error = str(exc)
@@ -129,14 +150,16 @@ def approve_and_verify(progress: ProgressCallback | None = None) -> dict:
         approve_remediation()
         _snapshot("human_approved")
 
-        _progress(progress, "🔧 Applying approved sandbox remediation")
-        # Capture a real O4 checkpoint before the verification agent applies the
-        # secure profile. execute_verification() calls mark_verifying() again,
-        # which is intentionally idempotent for the current lifecycle state.
+        _progress(progress, "🔧 Applying approved remediation and measuring verification")
         mark_verifying()
         mark_verifying_state()
         _snapshot("verification_started")
-        verification = execute_verification()
+
+        verification = measure_agent_activity(
+            "Verification Agent",
+            "O4 · Verify",
+            execute_verification,
+        )
 
         _progress(progress, "⚖️ Evaluating verification policy")
         verification_ok = (
@@ -151,7 +174,7 @@ def approve_and_verify(progress: ProgressCallback | None = None) -> dict:
 
         run = get_current_run()
         integrity = apply_hash_chain_to_run(run.run_id) if run else None
-        _progress(progress, "✓ Verification and evidence-integrity finalization complete")
+        _progress(progress, "✓ Verification, CodeCarbon telemetry and evidence integrity finalised")
 
         return {
             "verification": verification,
